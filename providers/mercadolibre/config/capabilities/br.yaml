@@ -1,0 +1,111 @@
+region:
+  country_code: "BR"
+  currency_code: "BRL"
+  locale: "pt-BR"
+  timezone_iana: "America/Sao_Paulo"
+
+payment:
+  supported_methods:
+    - id: "pix"
+      type: "transfer"
+      name: "PIX"
+      min_amount: 0.01
+      max_amount: 1000000.0
+      processing_time: "instant"
+      
+    - id: "boleto"
+      type: "cash"
+      name: "Boleto Bancario"
+      min_amount: 5.0
+      max_amount: 50000.0
+      processing_time: "1-3d"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Cartao de Credito"
+      min_amount: 1.0
+      max_amount: 100000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Cartao de Debito"
+      min_amount: 1.0
+      max_amount: 50000.0
+      processing_time: "instant"
+      
+    - id: "account_money"
+      type: "wallet"
+      name: "Dinheiro em Conta"
+      min_amount: 0.01
+      max_amount: 500000.0
+      processing_time: "instant"
+      
+    - id: "mercado_credito"
+      type: "wallet"
+      name: "Mercado Credito"
+      min_amount: 100.0
+      max_amount: 100000.0
+      processing_time: "instant"
+
+  min_amount: 0.01
+  max_amount: 1000000.0
+  max_amount_without_kyc: 10000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 12
+  
+  supported_currencies:
+    - "BRL"
+  
+  requires_kyc: true
+  requires_tax_id: true
+
+shipment:
+  supported_carriers:
+    - id: "correios"
+      name: "Correios"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "jadlog"
+      name: "Jadlog"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "loggi"
+      name: "Loggi"
+      service_types: ["express"]
+      coverage_zones: ["metropolitan"]
+      
+    - id: "total_express"
+      name: "Total Express"
+      service_types: ["standard"]
+      coverage_zones: ["national"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 30.0
+  max_dimensions_cm:
+    length: 100.0
+    width: 100.0
+    height: 100.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 60
+  min_amount: 0.01
+  max_amount: 50000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 25
+  requests_per_minute: 750
+  concurrent_connections: 15

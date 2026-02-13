@@ -1,0 +1,104 @@
+region:
+  country_code: "CO"
+  currency_code: "COP"
+  locale: "es-CO"
+  timezone_iana: "America/Bogota"
+
+payment:
+  supported_methods:
+    - id: "pse"
+      type: "transfer"
+      name: "PSE"
+      min_amount: 1000.0
+      max_amount: 50000000.0
+      processing_time: "instant"
+      
+    - id: "efecty"
+      type: "cash"
+      name: "Efecty"
+      min_amount: 5000.0
+      max_amount: 3000000.0
+      processing_time: "24h"
+      
+    - id: "baloto"
+      type: "cash"
+      name: "Baloto"
+      min_amount: 5000.0
+      max_amount: 1000000.0
+      processing_time: "24h"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Tarjeta de Credito"
+      min_amount: 1000.0
+      max_amount: 20000000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Tarjeta de Debito"
+      min_amount: 1000.0
+      max_amount: 10000000.0
+      processing_time: "instant"
+
+  min_amount: 1000.0
+  max_amount: 100000000.0
+  max_amount_without_kyc: 5000000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 36
+  
+  supported_currencies:
+    - "COP"
+  
+  requires_kyc: true
+  requires_tax_id: true
+
+shipment:
+  supported_carriers:
+    - id: "servientrega"
+      name: "Servientrega"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "coordinadora"
+      name: "Coordinadora"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "envia"
+      name: "Envia"
+      service_types: ["standard"]
+      coverage_zones: ["national"]
+      
+    - id: "inter_rapidisimo"
+      name: "Inter Rapidisimo"
+      service_types: ["express"]
+      coverage_zones: ["national"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 30.0
+  max_dimensions_cm:
+    length: 100.0
+    width: 80.0
+    height: 80.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 30
+  min_amount: 1000.0
+  max_amount: 5000000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 15
+  requests_per_minute: 450
+  concurrent_connections: 8

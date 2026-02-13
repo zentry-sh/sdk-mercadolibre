@@ -1,0 +1,111 @@
+region:
+  country_code: "MX"
+  currency_code: "MXN"
+  locale: "es-MX"
+  timezone_iana: "America/Mexico_City"
+
+payment:
+  supported_methods:
+    - id: "spei"
+      type: "transfer"
+      name: "SPEI"
+      min_amount: 10.0
+      max_amount: 1000000.0
+      processing_time: "instant"
+      
+    - id: "oxxo"
+      type: "cash"
+      name: "OXXO"
+      min_amount: 20.0
+      max_amount: 10000.0
+      processing_time: "1-3d"
+      
+    - id: "paycash"
+      type: "cash"
+      name: "PayCash"
+      min_amount: 20.0
+      max_amount: 10000.0
+      processing_time: "24h"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Tarjeta de Credito"
+      min_amount: 10.0
+      max_amount: 100000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Tarjeta de Debito"
+      min_amount: 10.0
+      max_amount: 50000.0
+      processing_time: "instant"
+      
+    - id: "mercado_credito"
+      type: "wallet"
+      name: "Mercado Credito"
+      min_amount: 100.0
+      max_amount: 50000.0
+      processing_time: "instant"
+
+  min_amount: 10.0
+  max_amount: 500000.0
+  max_amount_without_kyc: 5000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 18
+  
+  supported_currencies:
+    - "MXN"
+  
+  requires_kyc: true
+  requires_tax_id: false
+
+shipment:
+  supported_carriers:
+    - id: "estafeta"
+      name: "Estafeta"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "dhl"
+      name: "DHL Express"
+      service_types: ["express"]
+      coverage_zones: ["national", "international"]
+      
+    - id: "fedex"
+      name: "FedEx"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national", "international"]
+      
+    - id: "99minutos"
+      name: "99 Minutos"
+      service_types: ["express"]
+      coverage_zones: ["metropolitan"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 50.0
+  max_dimensions_cm:
+    length: 120.0
+    width: 80.0
+    height: 80.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 60
+  min_amount: 10.0
+  max_amount: 10000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 20
+  requests_per_minute: 600
+  concurrent_connections: 10

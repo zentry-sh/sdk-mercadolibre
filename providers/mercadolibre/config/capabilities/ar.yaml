@@ -1,0 +1,106 @@
+region:
+  country_code: "AR"
+  currency_code: "ARS"
+  locale: "es-AR"
+  timezone_iana: "America/Argentina/Buenos_Aires"
+
+payment:
+  supported_methods:
+    - id: "rapipago"
+      type: "cash"
+      name: "Rapipago"
+      min_amount: 100.0
+      max_amount: 50000.0
+      processing_time: "24h"
+      
+    - id: "pagofacil"
+      type: "cash"
+      name: "Pago Facil"
+      min_amount: 100.0
+      max_amount: 50000.0
+      processing_time: "24h"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Tarjeta de Credito"
+      min_amount: 100.0
+      max_amount: 500000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Tarjeta de Debito"
+      min_amount: 100.0
+      max_amount: 200000.0
+      processing_time: "instant"
+      
+    - id: "account_money"
+      type: "wallet"
+      name: "Dinero en Cuenta"
+      min_amount: 1.0
+      max_amount: 1000000.0
+      processing_time: "instant"
+      
+    - id: "mercado_credito"
+      type: "wallet"
+      name: "Mercado Credito"
+      min_amount: 1000.0
+      max_amount: 500000.0
+      processing_time: "instant"
+
+  min_amount: 100.0
+  max_amount: 5000000.0
+  max_amount_without_kyc: 50000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 24
+  
+  supported_currencies:
+    - "ARS"
+  
+  requires_kyc: true
+  requires_tax_id: true
+
+shipment:
+  supported_carriers:
+    - id: "correo_argentino"
+      name: "Correo Argentino"
+      service_types: ["standard"]
+      coverage_zones: ["national"]
+      
+    - id: "oca"
+      name: "OCA"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "andreani"
+      name: "Andreani"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 30.0
+  max_dimensions_cm:
+    length: 100.0
+    width: 80.0
+    height: 80.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 30
+  min_amount: 100.0
+  max_amount: 100000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 15
+  requests_per_minute: 450
+  concurrent_connections: 8
