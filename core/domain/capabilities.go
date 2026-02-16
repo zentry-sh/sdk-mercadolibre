@@ -54,7 +54,7 @@ type PaymentMethodInfo struct {
 	MinAmount      Money
 	MaxAmount      Money
 	ProcessingTime string
-	Metadata       map[string]interface{}
+	Metadata       map[string]any
 }
 
 type ShipmentCapabilities struct {

@@ -11,16 +11,16 @@ import (
 
 type QRService struct {
 	provider ports.QRProvider
-	logger   logger.Logger
+	log      logger.Logger
 }
 
 func NewQRService(provider ports.QRProvider, log logger.Logger) *QRService {
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 	return &QRService{
 		provider: provider,
-		logger:   log,
+		log:      log,
 	}
 }
 
@@ -28,30 +28,14 @@ func (s *QRService) CreateQR(ctx context.Context, req *domain.CreateQRRequest) (
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, err
 	}
-
-	s.logger.Info("creating QR",
-		"pos_id", req.POSID,
-		"external_ref", req.ExternalReference,
-		"type", req.Type)
-
-	qr, err := s.provider.CreateQR(ctx, req)
-	if err != nil {
-		s.logger.Error("failed to create QR", "error", err)
-		return nil, err
-	}
-
-	s.logger.Info("QR created",
-		"id", qr.ID,
-		"status", qr.Status.String())
-
-	return qr, nil
+	s.log.Debug("create_qr", "pos_id", req.POSID, "type", req.Type, "external_ref", req.ExternalReference)
+	return s.provider.CreateQR(ctx, req)
 }
 
 func (s *QRService) GetQR(ctx context.Context, qrID string) (*domain.QRCode, error) {
 	if qrID == "" {
 		return nil, errors.InvalidRequest("QR id is required")
 	}
-
 	return s.provider.GetQR(ctx, qrID)
 }
 
@@ -59,7 +43,6 @@ func (s *QRService) GetQRByExternalReference(ctx context.Context, ref string) (*
 	if ref == "" {
 		return nil, errors.InvalidRequest("external reference is required")
 	}
-
 	return s.provider.GetQRByExternalReference(ctx, ref)
 }
 
@@ -67,24 +50,13 @@ func (s *QRService) DeleteQR(ctx context.Context, qrID string) error {
 	if qrID == "" {
 		return errors.InvalidRequest("QR id is required")
 	}
-
-	s.logger.Info("deleting QR", "id", qrID)
-
-	err := s.provider.DeleteQR(ctx, qrID)
-	if err != nil {
-		s.logger.Error("failed to delete QR", "error", err)
-		return err
-	}
-
-	s.logger.Info("QR deleted", "id", qrID)
-	return nil
+	return s.provider.DeleteQR(ctx, qrID)
 }
 
 func (s *QRService) GetQRPayment(ctx context.Context, qrID string) (*domain.Payment, error) {
 	if qrID == "" {
 		return nil, errors.InvalidRequest("QR id is required")
 	}
-
 	return s.provider.GetQRPayment(ctx, qrID)
 }
 
@@ -92,26 +64,14 @@ func (s *QRService) RegisterPOS(ctx context.Context, req *domain.RegisterPOSRequ
 	if err := s.validateRegisterPOSRequest(req); err != nil {
 		return nil, err
 	}
-
-	s.logger.Info("registering POS",
-		"name", req.Name,
-		"store_id", req.StoreID)
-
-	pos, err := s.provider.RegisterPOS(ctx, req)
-	if err != nil {
-		s.logger.Error("failed to register POS", "error", err)
-		return nil, err
-	}
-
-	s.logger.Info("POS registered", "id", pos.ID)
-	return pos, nil
+	s.log.Debug("register_pos", "name", req.Name, "store_id", req.StoreID)
+	return s.provider.RegisterPOS(ctx, req)
 }
 
 func (s *QRService) GetPOS(ctx context.Context, posID string) (*domain.POSInfo, error) {
 	if posID == "" {
 		return nil, errors.InvalidRequest("POS id is required")
 	}
-
 	return s.provider.GetPOS(ctx, posID)
 }
 
@@ -123,41 +83,20 @@ func (s *QRService) DeletePOS(ctx context.Context, posID string) error {
 	if posID == "" {
 		return errors.InvalidRequest("POS id is required")
 	}
-
-	s.logger.Info("deleting POS", "id", posID)
-
-	err := s.provider.DeletePOS(ctx, posID)
-	if err != nil {
-		s.logger.Error("failed to delete POS", "error", err)
-		return err
-	}
-
-	s.logger.Info("POS deleted", "id", posID)
-	return nil
+	return s.provider.DeletePOS(ctx, posID)
 }
 
 func (s *QRService) RegisterStore(ctx context.Context, req *domain.RegisterStoreRequest) (*domain.StoreInfo, error) {
 	if req.Name == "" {
 		return nil, errors.InvalidRequest("store name is required")
 	}
-
-	s.logger.Info("registering store", "name", req.Name)
-
-	store, err := s.provider.RegisterStore(ctx, req)
-	if err != nil {
-		s.logger.Error("failed to register store", "error", err)
-		return nil, err
-	}
-
-	s.logger.Info("store registered", "id", store.ID)
-	return store, nil
+	return s.provider.RegisterStore(ctx, req)
 }
 
 func (s *QRService) GetStore(ctx context.Context, storeID string) (*domain.StoreInfo, error) {
 	if storeID == "" {
 		return nil, errors.InvalidRequest("store id is required")
 	}
-
 	return s.provider.GetStore(ctx, storeID)
 }
 

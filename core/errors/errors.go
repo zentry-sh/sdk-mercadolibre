@@ -35,7 +35,7 @@ type SDKError struct {
 	Message         string
 	ProviderCode    string
 	ProviderMessage string
-	Details         map[string]interface{}
+	Details         map[string]any
 	Cause           error
 }
 

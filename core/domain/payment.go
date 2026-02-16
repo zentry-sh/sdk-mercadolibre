@@ -14,7 +14,7 @@ type Payment struct {
 	StatusDetail      string
 	Payer             Payer
 	Installments      int
-	Metadata          map[string]interface{}
+	Metadata          map[string]any
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	ApprovedAt        *time.Time
@@ -43,7 +43,7 @@ type CreatePaymentRequest struct {
 	Installments      int
 	CallbackURL       string
 	NotificationURL   string
-	Metadata          map[string]interface{}
+	Metadata          map[string]any
 }
 
 type PaymentFilters struct {

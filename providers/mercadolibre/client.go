@@ -18,12 +18,12 @@ type Config struct {
 }
 
 type Client struct {
-	http          *httputil.Client
-	config        Config
-	logger        logger.Logger
-	paymentsURL   string
-	shipmentsURL  string
-	qrURL         string
+	http         *httputil.Client
+	config       Config
+	log          logger.Logger
+	paymentsURL  string
+	shipmentsURL string
+	qrURL        string
 }
 
 func NewClient(config Config) *Client {
@@ -36,7 +36,7 @@ func NewClient(config Config) *Client {
 
 	log := config.Logger
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 
 	httpClient := httputil.NewClient(httputil.ClientConfig{
@@ -49,7 +49,7 @@ func NewClient(config Config) *Client {
 	return &Client{
 		http:         httpClient,
 		config:       config,
-		logger:       log,
+		log:          log,
 		paymentsURL:  endpoints.PaymentsAPI,
 		shipmentsURL: endpoints.ShipmentsAPI,
 		qrURL:        endpoints.QRAPI,
@@ -70,7 +70,7 @@ func (c *Client) PaymentsHTTP() *httputil.Client {
 		BaseURL:     c.paymentsURL,
 		AccessToken: c.config.AccessToken,
 		Timeout:     c.config.Timeout,
-		Logger:      c.logger,
+		Logger:      c.log,
 	})
 }
 
@@ -79,7 +79,7 @@ func (c *Client) ShipmentsHTTP() *httputil.Client {
 		BaseURL:     c.shipmentsURL,
 		AccessToken: c.config.AccessToken,
 		Timeout:     c.config.Timeout,
-		Logger:      c.logger,
+		Logger:      c.log,
 	})
 }
 
@@ -88,6 +88,6 @@ func (c *Client) QRHTTP() *httputil.Client {
 		BaseURL:     c.qrURL,
 		AccessToken: c.config.AccessToken,
 		Timeout:     c.config.Timeout,
-		Logger:      c.logger,
+		Logger:      c.log,
 	})
 }

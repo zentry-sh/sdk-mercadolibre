@@ -11,16 +11,16 @@ import (
 
 type ShipmentService struct {
 	provider ports.ShipmentProvider
-	logger   logger.Logger
+	log      logger.Logger
 }
 
 func NewShipmentService(provider ports.ShipmentProvider, log logger.Logger) *ShipmentService {
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 	return &ShipmentService{
 		provider: provider,
-		logger:   log,
+		log:      log,
 	}
 }
 
@@ -28,29 +28,14 @@ func (s *ShipmentService) CreateShipment(ctx context.Context, req *domain.Create
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, err
 	}
-
-	s.logger.Info("creating shipment",
-		"order_id", req.OrderID,
-		"external_ref", req.ExternalReference)
-
-	shipment, err := s.provider.CreateShipment(ctx, req)
-	if err != nil {
-		s.logger.Error("failed to create shipment", "error", err)
-		return nil, err
-	}
-
-	s.logger.Info("shipment created",
-		"id", shipment.ID,
-		"status", shipment.Status.String())
-
-	return shipment, nil
+	s.log.Debug("create_shipment", "order_id", req.OrderID, "external_ref", req.ExternalReference)
+	return s.provider.CreateShipment(ctx, req)
 }
 
 func (s *ShipmentService) GetShipment(ctx context.Context, id string) (*domain.Shipment, error) {
 	if id == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
-
 	return s.provider.GetShipment(ctx, id)
 }
 
@@ -58,7 +43,6 @@ func (s *ShipmentService) GetShipmentByOrder(ctx context.Context, orderID string
 	if orderID == "" {
 		return nil, errors.InvalidRequest("order id is required")
 	}
-
 	return s.provider.GetShipmentByOrder(ctx, orderID)
 }
 
@@ -69,7 +53,6 @@ func (s *ShipmentService) ListShipments(ctx context.Context, filters domain.Ship
 	if filters.Limit > 100 {
 		filters.Limit = 100
 	}
-
 	return s.provider.ListShipments(ctx, filters)
 }
 
@@ -77,41 +60,20 @@ func (s *ShipmentService) UpdateShipment(ctx context.Context, id string, req *do
 	if id == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
-
-	s.logger.Info("updating shipment", "id", id)
-
-	shipment, err := s.provider.UpdateShipment(ctx, id, req)
-	if err != nil {
-		s.logger.Error("failed to update shipment", "error", err)
-		return nil, err
-	}
-
-	s.logger.Info("shipment updated", "id", shipment.ID)
-	return shipment, nil
+	return s.provider.UpdateShipment(ctx, id, req)
 }
 
 func (s *ShipmentService) CancelShipment(ctx context.Context, id string) error {
 	if id == "" {
 		return errors.InvalidRequest("shipment id is required")
 	}
-
-	s.logger.Info("cancelling shipment", "id", id)
-
-	err := s.provider.CancelShipment(ctx, id)
-	if err != nil {
-		s.logger.Error("failed to cancel shipment", "error", err)
-		return err
-	}
-
-	s.logger.Info("shipment cancelled", "id", id)
-	return nil
+	return s.provider.CancelShipment(ctx, id)
 }
 
 func (s *ShipmentService) GetTracking(ctx context.Context, shipmentID string) ([]domain.ShipmentEvent, error) {
 	if shipmentID == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
-
 	return s.provider.GetTracking(ctx, shipmentID)
 }
 
@@ -119,7 +81,6 @@ func (s *ShipmentService) GetLabel(ctx context.Context, shipmentID string) ([]by
 	if shipmentID == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
-
 	return s.provider.GetLabel(ctx, shipmentID)
 }
 

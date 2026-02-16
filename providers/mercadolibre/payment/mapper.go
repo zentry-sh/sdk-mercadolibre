@@ -2,6 +2,8 @@ package payment
 
 import (
 	"fmt"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/zentry/sdk-mercadolibre/core/domain"
@@ -205,35 +207,29 @@ func (m *Mapper) ToDomainPayments(mlPayments []MLPaymentResponse) []*domain.Paym
 }
 
 func (m *Mapper) BuildSearchQuery(filters domain.PaymentFilters) string {
-	query := ""
-	
+	params := url.Values{}
+
 	if filters.ExternalReference != "" {
-		query += "&external_reference=" + filters.ExternalReference
+		params.Set("external_reference", filters.ExternalReference)
 	}
-	
 	if filters.Status != nil {
-		query += "&status=" + filters.Status.String()
+		params.Set("status", filters.Status.String())
 	}
-	
 	if filters.FromDate != nil {
-		query += "&begin_date=" + filters.FromDate.Format(time.RFC3339)
+		params.Set("begin_date", filters.FromDate.Format(time.RFC3339))
 	}
-	
 	if filters.ToDate != nil {
-		query += "&end_date=" + filters.ToDate.Format(time.RFC3339)
+		params.Set("end_date", filters.ToDate.Format(time.RFC3339))
 	}
-	
 	if filters.Limit > 0 {
-		query += fmt.Sprintf("&limit=%d", filters.Limit)
+		params.Set("limit", strconv.Itoa(filters.Limit))
 	}
-	
 	if filters.Offset > 0 {
-		query += fmt.Sprintf("&offset=%d", filters.Offset)
+		params.Set("offset", strconv.Itoa(filters.Offset))
 	}
-	
-	if len(query) > 0 {
-		query = "?" + query[1:]
+
+	if len(params) == 0 {
+		return ""
 	}
-	
-	return query
+	return "?" + params.Encode()
 }

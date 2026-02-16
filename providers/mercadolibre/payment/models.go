@@ -12,7 +12,7 @@ type MLCreatePaymentRequest struct {
 	Installments      int                    `json:"installments,omitempty"`
 	NotificationURL   string                 `json:"notification_url,omitempty"`
 	CallbackURL       string                 `json:"callback_url,omitempty"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
 }
 
 type MLPayer struct {
@@ -56,7 +56,7 @@ type MLPaymentResponse struct {
 	PaymentTypeID       string                 `json:"payment_type_id"`
 	Installments        int                    `json:"installments"`
 	Payer               *MLPayer               `json:"payer"`
-	Metadata            map[string]interface{} `json:"metadata"`
+	Metadata            map[string]any `json:"metadata"`
 	DateCreated         time.Time              `json:"date_created"`
 	DateApproved        *time.Time             `json:"date_approved"`
 	DateLastUpdated     time.Time              `json:"date_last_updated"`

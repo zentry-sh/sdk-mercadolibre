@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/zentry/sdk-mercadolibre/core/domain"
 	"github.com/zentry/sdk-mercadolibre/core/errors"
@@ -14,7 +15,6 @@ import (
 type SDK struct {
 	config       Config
 	client       *mercadolibre.Client
-	logger       logger.Logger
 	Payment      *PaymentAPI
 	Shipment     *ShipmentAPI
 	QR           *QRAPI
@@ -27,12 +27,12 @@ func New(config Config) (*SDK, error) {
 	}
 
 	if !mercadolibre.IsCountrySupported(config.Country) {
-		return nil, errors.InvalidRequest("unsupported country: " + config.Country)
+		return nil, errors.InvalidRequest(fmt.Sprintf("unsupported country: %s", config.Country))
 	}
 
 	log := config.Logger
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 
 	client := mercadolibre.NewClient(mercadolibre.Config{
@@ -51,10 +51,9 @@ func New(config Config) (*SDK, error) {
 	paymentAdapter := payment.NewAdapter(client.PaymentsHTTP(), log)
 	paymentService := usecases.NewPaymentService(paymentAdapter, log)
 
-	sdk := &SDK{
+	return &SDK{
 		config: config,
 		client: client,
-		logger: log,
 		Payment: &PaymentAPI{
 			service:      paymentService,
 			capabilities: capabilitiesService,
@@ -66,9 +65,7 @@ func New(config Config) (*SDK, error) {
 			service: capabilitiesService,
 			country: config.Country,
 		},
-	}
-
-	return sdk, nil
+	}, nil
 }
 
 func (s *SDK) SetAccessToken(token string) {

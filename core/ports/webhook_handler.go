@@ -26,7 +26,7 @@ type BaseWebhookEvent struct {
 	Action    string
 	LiveMode  bool
 	Timestamp int64
-	Data      map[string]interface{}
+	Data      map[string]any
 }
 
 type PaymentWebhookEvent struct {

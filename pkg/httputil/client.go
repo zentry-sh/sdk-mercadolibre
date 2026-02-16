@@ -7,17 +7,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/zentry/sdk-mercadolibre/core/errors"
 	"github.com/zentry/sdk-mercadolibre/pkg/logger"
 )
 
+const maxResponseBytes = 10 << 20 // 10 MiB
+
 type Client struct {
 	httpClient  *http.Client
 	baseURL     string
 	accessToken string
-	logger      logger.Logger
+	log         logger.Logger
 	retryConfig RetryConfig
 }
 
@@ -56,7 +59,7 @@ func NewClient(config ClientConfig) *Client {
 
 	log := config.Logger
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 
 	return &Client{
@@ -65,7 +68,7 @@ func NewClient(config ClientConfig) *Client {
 		},
 		baseURL:     config.BaseURL,
 		accessToken: config.AccessToken,
-		logger:      log,
+		log:         log,
 		retryConfig: retryConfig,
 	}
 }
@@ -74,17 +77,25 @@ func (c *Client) SetAccessToken(token string) {
 	c.accessToken = token
 }
 
-func (c *Client) Do(ctx context.Context, method, path string, body interface{}, result interface{}) error {
-	return c.doWithRetry(ctx, method, path, body, result)
+func (c *Client) Do(ctx context.Context, method, path string, body any, result any) error {
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = json.Marshal(body)
+		if err != nil {
+			return errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "failed to marshal request body", err)
+		}
+	}
+	return c.doWithRetry(ctx, method, path, bodyBytes, result)
 }
 
-func (c *Client) doWithRetry(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+func (c *Client) doWithRetry(ctx context.Context, method, path string, body []byte, result any) error {
 	var lastErr error
 	backoff := c.retryConfig.InitialBackoff
 
 	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
 		if attempt > 0 {
-			c.logger.Debug("retrying request", "attempt", attempt, "backoff", backoff)
+			c.log.Debug("retrying request", "attempt", attempt, "backoff_ms", backoff.Milliseconds())
 			select {
 			case <-ctx.Done():
 				return errors.NewErrorWithCause(errors.ErrCodeTimeout, "context cancelled", ctx.Err())
@@ -96,34 +107,30 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body inte
 			}
 		}
 
-		err := c.doRequest(ctx, method, path, body, result)
-		if err == nil {
-			return nil
+		if err := c.doRequest(ctx, method, path, body, result); err != nil {
+			lastErr = err
+			if !c.shouldRetry(err) {
+				return err
+			}
+			continue
 		}
-
-		lastErr = err
-
-		if !c.shouldRetry(err) {
-			return err
-		}
+		return nil
 	}
-
 	return lastErr
 }
 
-func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
-	url := c.baseURL + path
+func (c *Client) doRequest(ctx context.Context, method, path string, body []byte, result any) error {
+	u, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		return errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "invalid request path", err)
+	}
 
 	var bodyReader io.Reader
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "failed to marshal request body", err)
-		}
-		bodyReader = bytes.NewReader(jsonBody)
+		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
 		return errors.NewErrorWithCause(errors.ErrCodeInternal, "failed to create request", err)
 	}
@@ -131,10 +138,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if c.accessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 	}
 
-	c.logger.Debug("sending request", "method", method, "url", url)
+	c.log.Debug("http request", "method", method, "path", path)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -142,12 +149,13 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	limited := io.LimitReader(resp.Body, maxResponseBytes)
+	respBody, err := io.ReadAll(limited)
 	if err != nil {
 		return errors.NewErrorWithCause(errors.ErrCodeNetworkError, "failed to read response body", err)
 	}
 
-	c.logger.Debug("received response", "status", resp.StatusCode)
+	c.log.Debug("http response", "status", resp.StatusCode, "bytes", len(respBody))
 
 	if resp.StatusCode >= 400 {
 		return c.handleErrorResponse(resp.StatusCode, respBody)
@@ -173,14 +181,14 @@ func (c *Client) handleErrorResponse(statusCode int, body []byte) error {
 		} `json:"cause"`
 	}
 
-	json.Unmarshal(body, &apiErr)
+	_ = json.Unmarshal(body, &apiErr)
 
 	message := apiErr.Message
 	if message == "" {
 		message = apiErr.Error
 	}
 	if message == "" {
-		message = fmt.Sprintf("HTTP %d error", statusCode)
+		message = fmt.Sprintf("HTTP %d", statusCode)
 	}
 
 	providerCode := ""
@@ -211,24 +219,26 @@ func (c *Client) handleErrorResponse(statusCode int, body []byte) error {
 }
 
 func (c *Client) shouldRetry(err error) bool {
-	if sdkErr, ok := err.(*errors.SDKError); ok {
-		switch sdkErr.Code {
-		case errors.ErrCodeRateLimited, errors.ErrCodeTimeout, errors.ErrCodeNetworkError:
-			return true
-		}
+	sdkErr, ok := err.(*errors.SDKError)
+	if !ok {
+		return false
+	}
+	switch sdkErr.Code {
+	case errors.ErrCodeRateLimited, errors.ErrCodeTimeout, errors.ErrCodeNetworkError:
+		return true
 	}
 	return false
 }
 
-func (c *Client) Get(ctx context.Context, path string, result interface{}) error {
+func (c *Client) Get(ctx context.Context, path string, result any) error {
 	return c.Do(ctx, http.MethodGet, path, nil, result)
 }
 
-func (c *Client) Post(ctx context.Context, path string, body interface{}, result interface{}) error {
+func (c *Client) Post(ctx context.Context, path string, body any, result any) error {
 	return c.Do(ctx, http.MethodPost, path, body, result)
 }
 
-func (c *Client) Put(ctx context.Context, path string, body interface{}, result interface{}) error {
+func (c *Client) Put(ctx context.Context, path string, body any, result any) error {
 	return c.Do(ctx, http.MethodPut, path, body, result)
 }
 

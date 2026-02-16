@@ -1,0 +1,1409 @@
+# SDK Multi-Region con Arquitectura de Capacidades
+
+## Objetivo
+
+Extender el SDK de Mercado Libre para soportar múltiples países (iniciando con Perú, luego México, Argentina, Brasil, etc.) mediante un **sistema de capacidades dinámicas** que trata las diferencias regionales como **datos de configuración**, no como lógica de código.
+
+**Principio rector:** Agregar un nuevo país debe ser solo añadir configuración, nunca modificar `core/` ni la API pública.
+
+---
+
+## Arquitectura de Capacidades
+
+```mermaid
+graph TD
+    A[Cliente SDK] --> B[sdk.go - API Pública]
+    B --> C[core/ - Dominio Universal]
+    C --> D[ports/ - Interfaces]
+    D --> E[providers/mercadolibre/]
+    E --> F[config/capabilities/]
+    F --> G[pe.yaml]
+    F --> H[mx.yaml]
+    F --> I[ar.yaml]
+    F --> J[br.yaml]
+    E --> K[adapter con Capabilities]
+    K --> L[API ML Regional]
+    
+    style C fill:#fff4e1
+    style F fill:#e1ffe1
+    style K fill:#ffe1e1
+```
+
+---
+
+## Estructura del Proyecto (Extensiones Multi-Region)
+
+```
+SDK-MercadoLibre/
+├── core/
+│   ├── domain/
+│   │   ├── payment.go              # Sin cambios (universal)
+│   │   ├── shipment.go             # Sin cambios (universal)
+│   │   ├── qr.go                   # Sin cambios (universal)
+│   │   └── capabilities.go         # ✨ NUEVO: Sistema de capacidades
+│   │
+│   ├── ports/
+│   │   ├── payment_provider.go
+│   │   ├── shipment_provider.go
+│   │   ├── qr_provider.go
+│   │   └── capabilities_provider.go  # ✨ NUEVO
+│   │
+│   └── usecases/
+│       ├── payment_service.go       # Valida contra capabilities
+│       └── capabilities_service.go  # ✨ NUEVO
+│
+├── providers/mercadolibre/
+│   ├── config/
+│   │   ├── capabilities/           # ✨ NUEVO: Configuración por país
+│   │   │   ├── pe.yaml             # Perú
+│   │   │   ├── mx.yaml             # México
+│   │   │   ├── ar.yaml             # Argentina
+│   │   │   ├── br.yaml             # Brasil
+│   │   │   └── cl.yaml             # Chile
+│   │   │
+│   │   ├── loader.go               # Carga capabilities desde archivos
+│   │   └── validator.go            # Valida configuración
+│   │
+│   ├── regions/                    # ✨ NUEVO: Metadata regional
+│   │   ├── registry.go             # Registro de regiones
+│   │   └── endpoints.go            # URLs por región
+│   │
+│   ├── payment/
+│   │   ├── adapter.go              # Usa capabilities
+│   │   ├── methods_registry.go     # ✨ NUEVO: Métodos dinámicos
+│   │   └── validator.go            # ✨ NUEVO: Validación dinámica
+│   │
+│   └── capabilities_adapter.go     # ✨ NUEVO: Implementa CapabilitiesProvider
+│
+├── examples/
+│   ├── multi_region/               # ✨ NUEVO
+│   │   ├── discover_capabilities.go
+│   │   ├── payment_peru.go
+│   │   └── payment_mexico.go
+│   │
+│   └── migration/                  # ✨ NUEVO
+│       └── country_switch.go       # Cambiar de país sin código
+│
+└── tests/
+    └── capabilities/               # ✨ NUEVO
+        ├── pe_test.go
+        ├── mx_test.go
+        └── capabilities_test.go
+```
+
+---
+
+## Implementación del Sistema de Capacidades
+
+### 1. Dominio Universal: `core/domain/capabilities.go`
+
+**Responsabilidad:** Definir el modelo de capacidades universal, sin mencionar países específicos.
+
+```go
+package domain
+
+// RegionCapabilities define qué puede hacer el SDK en una región específica
+type RegionCapabilities struct {
+    Region          Region
+    
+    // Pagos
+    Payment         PaymentCapabilities
+    
+    // Envíos
+    Shipment        ShipmentCapabilities
+    
+    // QR
+    QR              QRCapabilities
+    
+    // Límites generales
+    RateLimits      RateLimits
+}
+
+type Region struct {
+    CountryCode     string   // "PE", "MX", "AR", "BR"
+    CurrencyCode    string   // "PEN", "MXN", "ARS", "BRL"
+    Locale          string   // "es-PE", "es-MX", "pt-BR"
+    TimezoneIANA    string   // "America/Lima", "America/Mexico_City"
+}
+
+type PaymentCapabilities struct {
+    // Métodos soportados (dinámico)
+    SupportedMethods       []PaymentMethodInfo
+    
+    // Límites
+    MinAmount              Money
+    MaxAmount              Money
+    MaxAmountWithoutKYC    *Money  // nil si no aplica
+    
+    // Features
+    SupportsRefunds        bool
+    SupportsPartialRefunds bool
+    SupportsInstallments   bool
+    MaxInstallments        int
+    
+    // Monedas
+    SupportedCurrencies    []string
+    
+    // Regulación
+    RequiresKYC            bool
+    RequiresTaxID          bool
+}
+
+type PaymentMethodInfo struct {
+    ID              string          // "oxxo", "yape", "pix"
+    Type            PaymentMethod   // card, transfer, cash, qr
+    Name            string          // "OXXO", "Yape", "PIX"
+    MinAmount       Money
+    MaxAmount       Money
+    ProcessingTime  string          // "instant", "1-3d", "24h"
+    Metadata        map[string]interface{}
+}
+
+type ShipmentCapabilities struct {
+    // Carriers disponibles
+    SupportedCarriers      []CarrierInfo
+    
+    // Features
+    SupportsTracking       bool
+    SupportsLabelPrint     bool
+    SupportsScheduledPickup bool
+    SupportsCancellation   bool
+    
+    // Límites
+    MaxWeightKg            float64
+    MaxDimensionsCm        Dimensions
+}
+
+type CarrierInfo struct {
+    ID              string
+    Name            string
+    ServiceTypes    []string  // "standard", "express"
+    CoverageZones   []string  // "national", "metropolitan"
+}
+
+type QRCapabilities struct {
+    Supported              bool
+    SupportsDynamicQR      bool
+    SupportsStaticQR       bool
+    MaxExpirationMinutes   int
+    MinAmount              Money
+    MaxAmount              Money
+    RequiresPOSRegistration bool
+}
+
+type RateLimits struct {
+    RequestsPerSecond      int
+    RequestsPerMinute      int
+    ConcurrentConnections  int
+}
+
+// Dimensions representa dimensiones físicas
+type Dimensions struct {
+    Length float64
+    Width  float64
+    Height float64
+}
+```
+
+---
+
+### 2. Puerto de Capacidades: `core/ports/capabilities_provider.go`
+
+```go
+package ports
+
+import (
+    "context"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+)
+
+type CapabilitiesProvider interface {
+    // Obtener capacidades de una región
+    GetCapabilities(ctx context.Context, countryCode string) (*domain.RegionCapabilities, error)
+    
+    // Listar regiones soportadas
+    ListSupportedRegions(ctx context.Context) ([]domain.Region, error)
+    
+    // Validar si una operación es soportada
+    ValidatePaymentRequest(ctx context.Context, countryCode string, req *domain.CreatePaymentRequest) error
+    ValidateShipmentRequest(ctx context.Context, countryCode string, req *domain.CreateShipmentRequest) error
+}
+```
+
+---
+
+### 3. Configuración por País: `providers/mercadolibre/config/capabilities/pe.yaml`
+
+**Responsabilidad:** Datos operativos de Perú, sin lógica de código.
+
+```yaml
+region:
+  country_code: "PE"
+  currency_code: "PEN"
+  locale: "es-PE"
+  timezone_iana: "America/Lima"
+
+payment:
+  supported_methods:
+    - id: "yape"
+      type: "transfer"
+      name: "Yape"
+      min_amount: 1.0
+      max_amount: 2000.0
+      processing_time: "instant"
+      metadata:
+        logo_url: "https://..."
+        
+    - id: "pagoefectivo"
+      type: "cash"
+      name: "PagoEfectivo"
+      min_amount: 5.0
+      max_amount: 5000.0
+      processing_time: "24h"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Tarjeta de Crédito"
+      min_amount: 1.0
+      max_amount: 10000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Tarjeta de Débito"
+      min_amount: 1.0
+      max_amount: 5000.0
+      processing_time: "instant"
+
+  min_amount: 1.0
+  max_amount: 50000.0
+  max_amount_without_kyc: 2000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 12
+  
+  supported_currencies:
+    - "PEN"
+  
+  requires_kyc: true
+  requires_tax_id: true
+
+shipment:
+  supported_carriers:
+    - id: "olva"
+      name: "Olva Courier"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national", "metropolitan"]
+      
+    - id: "urbano"
+      name: "Urbano Express"
+      service_types: ["express"]
+      coverage_zones: ["metropolitan"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 30.0
+  max_dimensions_cm:
+    length: 100.0
+    width: 100.0
+    height: 100.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 30
+  min_amount: 1.0
+  max_amount: 2000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 10
+  requests_per_minute: 300
+  concurrent_connections: 5
+```
+
+---
+
+### 4. Configuración México: `providers/mercadolibre/config/capabilities/mx.yaml`
+
+```yaml
+region:
+  country_code: "MX"
+  currency_code: "MXN"
+  locale: "es-MX"
+  timezone_iana: "America/Mexico_City"
+
+payment:
+  supported_methods:
+    - id: "spei"
+      type: "transfer"
+      name: "SPEI"
+      min_amount: 10.0
+      max_amount: 1000000.0
+      processing_time: "instant"
+      
+    - id: "oxxo"
+      type: "cash"
+      name: "OXXO"
+      min_amount: 20.0
+      max_amount: 10000.0
+      processing_time: "1-3d"
+      
+    - id: "credit_card"
+      type: "card"
+      name: "Tarjeta de Crédito"
+      min_amount: 10.0
+      max_amount: 100000.0
+      processing_time: "instant"
+      
+    - id: "debit_card"
+      type: "card"
+      name: "Tarjeta de Débito"
+      min_amount: 10.0
+      max_amount: 50000.0
+      processing_time: "instant"
+
+  min_amount: 10.0
+  max_amount: 500000.0
+  max_amount_without_kyc: 5000.0
+  
+  supports_refunds: true
+  supports_partial_refunds: true
+  supports_installments: true
+  max_installments: 18
+  
+  supported_currencies:
+    - "MXN"
+  
+  requires_kyc: true
+  requires_tax_id: false
+
+shipment:
+  supported_carriers:
+    - id: "estafeta"
+      name: "Estafeta"
+      service_types: ["standard", "express"]
+      coverage_zones: ["national"]
+      
+    - id: "dhl"
+      name: "DHL Express"
+      service_types: ["express"]
+      coverage_zones: ["national", "international"]
+
+  supports_tracking: true
+  supports_label_print: true
+  supports_scheduled_pickup: true
+  supports_cancellation: true
+  
+  max_weight_kg: 50.0
+  max_dimensions_cm:
+    length: 120.0
+    width: 80.0
+    height: 80.0
+
+qr:
+  supported: true
+  supports_dynamic_qr: true
+  supports_static_qr: true
+  max_expiration_minutes: 60
+  min_amount: 10.0
+  max_amount: 10000.0
+  requires_pos_registration: true
+
+rate_limits:
+  requests_per_second: 20
+  requests_per_minute: 600
+  concurrent_connections: 10
+```
+
+---
+
+### 5. Loader de Capacidades: `providers/mercadolibre/config/loader.go`
+
+**Responsabilidad:** Cargar y parsear archivos YAML de capacidades.
+
+```go
+package config
+
+import (
+    "embed"
+    "fmt"
+    "gopkg.in/yaml.v3"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+)
+
+//go:embed capabilities/*.yaml
+var capabilitiesFS embed.FS
+
+type CapabilitiesLoader struct {
+    cache map[string]*domain.RegionCapabilities
+}
+
+func NewCapabilitiesLoader() *CapabilitiesLoader {
+    return &CapabilitiesLoader{
+        cache: make(map[string]*domain.RegionCapabilities),
+    }
+}
+
+func (l *CapabilitiesLoader) Load(countryCode string) (*domain.RegionCapabilities, error) {
+    // Check cache
+    if caps, ok := l.cache[countryCode]; ok {
+        return caps, nil
+    }
+    
+    // Load from embedded file
+    filename := fmt.Sprintf("capabilities/%s.yaml", strings.ToLower(countryCode))
+    data, err := capabilitiesFS.ReadFile(filename)
+    if err != nil {
+        return nil, fmt.Errorf("capabilities not found for country %s: %w", countryCode, err)
+    }
+    
+    // Parse YAML
+    var caps domain.RegionCapabilities
+    if err := yaml.Unmarshal(data, &caps); err != nil {
+        return nil, fmt.Errorf("failed to parse capabilities: %w", err)
+    }
+    
+    // Validate
+    if err := l.validate(&caps); err != nil {
+        return nil, fmt.Errorf("invalid capabilities: %w", err)
+    }
+    
+    // Cache
+    l.cache[countryCode] = &caps
+    
+    return &caps, nil
+}
+
+func (l *CapabilitiesLoader) LoadAll() (map[string]*domain.RegionCapabilities, error) {
+    entries, err := capabilitiesFS.ReadDir("capabilities")
+    if err != nil {
+        return nil, err
+    }
+    
+    result := make(map[string]*domain.RegionCapabilities)
+    for _, entry := range entries {
+        if entry.IsDir() {
+            continue
+        }
+        
+        countryCode := strings.TrimSuffix(entry.Name(), ".yaml")
+        caps, err := l.Load(strings.ToUpper(countryCode))
+        if err != nil {
+            return nil, err
+        }
+        
+        result[strings.ToUpper(countryCode)] = caps
+    }
+    
+    return result, nil
+}
+
+func (l *CapabilitiesLoader) validate(caps *domain.RegionCapabilities) error {
+    if caps.Region.CountryCode == "" {
+        return fmt.Errorf("country_code is required")
+    }
+    if caps.Region.CurrencyCode == "" {
+        return fmt.Errorf("currency_code is required")
+    }
+    if caps.Payment.MinAmount < 0 {
+        return fmt.Errorf("min_amount cannot be negative")
+    }
+    if caps.Payment.MaxAmount <= caps.Payment.MinAmount {
+        return fmt.Errorf("max_amount must be greater than min_amount")
+    }
+    // ... más validaciones
+    return nil
+}
+```
+
+---
+
+### 6. Registro de Regiones: `providers/mercadolibre/regions/registry.go`
+
+**Responsabilidad:** Mapear países a endpoints regionales de ML.
+
+```go
+package regions
+
+import "fmt"
+
+type EndpointRegistry struct {
+    endpoints map[string]RegionEndpoints
+}
+
+type RegionEndpoints struct {
+    BaseURL        string
+    PaymentsAPI    string
+    ShipmentsAPI   string
+    QRAPI          string
+    OAuth2URL      string
+}
+
+func NewEndpointRegistry() *EndpointRegistry {
+    return &EndpointRegistry{
+        endpoints: map[string]RegionEndpoints{
+            "PE": {
+                BaseURL:      "https://api.mercadolibre.com",
+                PaymentsAPI:  "https://api.mercadopago.com.pe",
+                ShipmentsAPI: "https://api.mercadolibre.com/shipments",
+                QRAPI:        "https://api.mercadopago.com.pe/instore",
+                OAuth2URL:    "https://api.mercadolibre.com/oauth/token",
+            },
+            "MX": {
+                BaseURL:      "https://api.mercadolibre.com",
+                PaymentsAPI:  "https://api.mercadopago.com.mx",
+                ShipmentsAPI: "https://api.mercadolibre.com/shipments",
+                QRAPI:        "https://api.mercadopago.com.mx/instore",
+                OAuth2URL:    "https://api.mercadolibre.com/oauth/token",
+            },
+            "AR": {
+                BaseURL:      "https://api.mercadolibre.com",
+                PaymentsAPI:  "https://api.mercadopago.com.ar",
+                ShipmentsAPI: "https://api.mercadolibre.com/shipments",
+                QRAPI:        "https://api.mercadopago.com.ar/instore",
+                OAuth2URL:    "https://api.mercadolibre.com/oauth/token",
+            },
+            "BR": {
+                BaseURL:      "https://api.mercadolibre.com",
+                PaymentsAPI:  "https://api.mercadopago.com.br",
+                ShipmentsAPI: "https://api.mercadolibre.com/shipments",
+                QRAPI:        "https://api.mercadopago.com.br/instore",
+                OAuth2URL:    "https://api.mercadolibre.com/oauth/token",
+            },
+        },
+    }
+}
+
+func (r *EndpointRegistry) Get(countryCode string) (RegionEndpoints, error) {
+    endpoints, ok := r.endpoints[countryCode]
+    if !ok {
+        return RegionEndpoints{}, fmt.Errorf("region not supported: %s", countryCode)
+    }
+    return endpoints, nil
+}
+
+func (r *EndpointRegistry) ListSupported() []string {
+    codes := make([]string, 0, len(r.endpoints))
+    for code := range r.endpoints {
+        codes = append(codes, code)
+    }
+    return codes
+}
+```
+
+---
+
+### 7. Adaptador de Capacidades: `providers/mercadolibre/capabilities_adapter.go`
+
+**Responsabilidad:** Implementar `CapabilitiesProvider` usando configuración.
+
+```go
+package mercadolibre
+
+import (
+    "context"
+    "fmt"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+    "github.com/tu-org/mercadolibre-sdk/core/ports"
+    "github.com/tu-org/mercadolibre-sdk/providers/mercadolibre/config"
+)
+
+type CapabilitiesAdapter struct {
+    loader *config.CapabilitiesLoader
+}
+
+func NewCapabilitiesAdapter() *CapabilitiesAdapter {
+    return &CapabilitiesAdapter{
+        loader: config.NewCapabilitiesLoader(),
+    }
+}
+
+func (a *CapabilitiesAdapter) GetCapabilities(ctx context.Context, countryCode string) (*domain.RegionCapabilities, error) {
+    return a.loader.Load(countryCode)
+}
+
+func (a *CapabilitiesAdapter) ListSupportedRegions(ctx context.Context) ([]domain.Region, error) {
+    allCaps, err := a.loader.LoadAll()
+    if err != nil {
+        return nil, err
+    }
+    
+    regions := make([]domain.Region, 0, len(allCaps))
+    for _, caps := range allCaps {
+        regions = append(regions, caps.Region)
+    }
+    
+    return regions, nil
+}
+
+func (a *CapabilitiesAdapter) ValidatePaymentRequest(ctx context.Context, countryCode string, req *domain.CreatePaymentRequest) error {
+    caps, err := a.GetCapabilities(ctx, countryCode)
+    if err != nil {
+        return err
+    }
+    
+    // Validar moneda
+    if !contains(caps.Payment.SupportedCurrencies, req.Amount.Currency) {
+        return fmt.Errorf("currency %s not supported in %s", req.Amount.Currency, countryCode)
+    }
+    
+    // Validar monto
+    if req.Amount.Amount < caps.Payment.MinAmount.Amount {
+        return fmt.Errorf("amount %f is below minimum %f", req.Amount.Amount, caps.Payment.MinAmount.Amount)
+    }
+    if req.Amount.Amount > caps.Payment.MaxAmount.Amount {
+        return fmt.Errorf("amount %f exceeds maximum %f", req.Amount.Amount, caps.Payment.MaxAmount.Amount)
+    }
+    
+    // Validar método de pago
+    methodSupported := false
+    for _, method := range caps.Payment.SupportedMethods {
+        if method.Type == req.Method {
+            methodSupported = true
+            
+            // Validar límites del método específico
+            if req.Amount.Amount < method.MinAmount.Amount || req.Amount.Amount > method.MaxAmount.Amount {
+                return fmt.Errorf("amount %f out of range for method %s (%f - %f)", 
+                    req.Amount.Amount, method.ID, method.MinAmount.Amount, method.MaxAmount.Amount)
+            }
+            break
+        }
+    }
+    
+    if !methodSupported {
+        return fmt.Errorf("payment method %s not supported in %s", req.Method, countryCode)
+    }
+    
+    // Validar KYC si aplica
+    if caps.Payment.RequiresKYC && caps.Payment.MaxAmountWithoutKYC != nil {
+        if req.Amount.Amount > caps.Payment.MaxAmountWithoutKYC.Amount && req.Payer.Identification.Number == "" {
+            return fmt.Errorf("KYC required for amounts above %f", caps.Payment.MaxAmountWithoutKYC.Amount)
+        }
+    }
+    
+    return nil
+}
+
+func (a *CapabilitiesAdapter) ValidateShipmentRequest(ctx context.Context, countryCode string, req *domain.CreateShipmentRequest) error {
+    caps, err := a.GetCapabilities(ctx, countryCode)
+    if err != nil {
+        return err
+    }
+    
+    // Validar peso
+    if req.Package.Weight > caps.Shipment.MaxWeightKg {
+        return fmt.Errorf("weight %f kg exceeds maximum %f kg", req.Package.Weight, caps.Shipment.MaxWeightKg)
+    }
+    
+    // Validar dimensiones
+    maxDim := caps.Shipment.MaxDimensionsCm
+    if req.Package.Length > maxDim.Length || 
+       req.Package.Width > maxDim.Width || 
+       req.Package.Height > maxDim.Height {
+        return fmt.Errorf("package dimensions exceed limits")
+    }
+    
+    return nil
+}
+
+func contains(slice []string, item string) bool {
+    for _, s := range slice {
+        if s == item {
+            return true
+        }
+    }
+    return false
+}
+```
+
+---
+
+### 8. Caso de Uso de Capacidades: `core/usecases/capabilities_service.go`
+
+```go
+package usecases
+
+import (
+    "context"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+    "github.com/tu-org/mercadolibre-sdk/core/ports"
+    "github.com/tu-org/mercadolibre-sdk/pkg/logger"
+)
+
+type CapabilitiesService struct {
+    provider ports.CapabilitiesProvider
+    logger   logger.Logger
+}
+
+func NewCapabilitiesService(provider ports.CapabilitiesProvider, logger logger.Logger) *CapabilitiesService {
+    return &CapabilitiesService{
+        provider: provider,
+        logger:   logger,
+    }
+}
+
+func (s *CapabilitiesService) GetCapabilities(ctx context.Context, countryCode string) (*domain.RegionCapabilities, error) {
+    s.logger.Info("Fetching capabilities", "country", countryCode)
+    
+    caps, err := s.provider.GetCapabilities(ctx, countryCode)
+    if err != nil {
+        s.logger.Error("Failed to get capabilities", "error", err)
+        return nil, err
+    }
+    
+    return caps, nil
+}
+
+func (s *CapabilitiesService) ListSupportedRegions(ctx context.Context) ([]domain.Region, error) {
+    return s.provider.ListSupportedRegions(ctx)
+}
+
+func (s *CapabilitiesService) GetSupportedPaymentMethods(ctx context.Context, countryCode string) ([]domain.PaymentMethodInfo, error) {
+    caps, err := s.GetCapabilities(ctx, countryCode)
+    if err != nil {
+        return nil, err
+    }
+    
+    return caps.Payment.SupportedMethods, nil
+}
+
+func (s *CapabilitiesService) GetSupportedCarriers(ctx context.Context, countryCode string) ([]domain.CarrierInfo, error) {
+    caps, err := s.GetCapabilities(ctx, countryCode)
+    if err != nil {
+        return nil, err
+    }
+    
+    return caps.Shipment.SupportedCarriers, nil
+}
+```
+
+---
+
+### 9. Payment Service con Validación Dinámica: `core/usecases/payment_service.go`
+
+**Modificación:** Integrar validación de capacidades.
+
+```go
+func (s *PaymentService) CreatePayment(ctx context.Context, countryCode string, req *domain.CreatePaymentRequest) (*domain.Payment, error) {
+    // 1. Validar contra capabilities
+    if err := s.capabilitiesProvider.ValidatePaymentRequest(ctx, countryCode, req); err != nil {
+        return nil, &errors.SDKError{
+            Code:    errors.ErrCodeInvalidRequest,
+            Message: err.Error(),
+        }
+    }
+    
+    // 2. Validaciones de dominio (genéricas)
+    if err := s.validatePaymentRequest(req); err != nil {
+        return nil, err
+    }
+    
+    // 3. Logging
+    s.logger.Info("Creating payment", 
+        "country", countryCode,
+        "external_ref", req.ExternalReference,
+        "amount", req.Amount.Amount,
+        "currency", req.Amount.Currency)
+    
+    // 4. Delegar al provider (ahora conoce la región)
+    payment, err := s.provider.CreatePayment(ctx, countryCode, req)
+    if err != nil {
+        s.logger.Error("Failed to create payment", "error", err)
+        return nil, err
+    }
+    
+    s.logger.Info("Payment created", "id", payment.ID, "status", payment.Status)
+    
+    return payment, nil
+}
+```
+
+---
+
+### 10. API Pública Multi-Region: `sdk.go`
+
+**Modificación:** Aceptar configuración regional.
+
+```go
+package mercadolibre
+
+type Config struct {
+    // Región por defecto
+    DefaultCountry string  // "PE", "MX", etc.
+    
+    // Credenciales (pueden ser multi-región o globales)
+    APIKey         string
+    AccessToken    string
+    
+    // Configuración HTTP
+    Timeout        time.Duration
+    MaxRetries     int
+    
+    // Logging
+    Logger         logger.Logger
+    
+    // Webhook
+    WebhookSecret  string
+}
+
+type SDK struct {
+    config       Config
+    Payment      *usecases.PaymentService
+    Shipment     *usecases.ShipmentService
+    QR           *usecases.QRService
+    Capabilities *usecases.CapabilitiesService
+    Webhook      ports.WebhookHandler
+}
+
+func NewSDK(config Config) (*SDK, error) {
+    // Validar región por defecto
+    if config.DefaultCountry == "" {
+        return nil, fmt.Errorf("default_country is required")
+    }
+    
+    // Crear capabilities provider
+    capsAdapter := mercadolibre.NewCapabilitiesAdapter()
+    capsService := usecases.NewCapabilitiesService(capsAdapter, config.Logger)
+    
+    // Validar que la región esté soportada
+    _, err := capsService.GetCapabilities(context.Background(), config.DefaultCountry)
+    if err != nil {
+        return nil, fmt.Errorf("unsupported country: %w", err)
+    }
+    
+    // Crear cliente regional
+    endpointRegistry := regions.NewEndpointRegistry()
+    endpoints, err := endpointRegistry.Get(config.DefaultCountry)
+    if err != nil {
+        return nil, err
+    }
+    
+    mlClient := mercadolibre.NewClient(mercadolibre.ClientConfig{
+        Endpoints: endpoints,
+        APIKey:    config.APIKey,
+        Timeout:   config.Timeout,
+    }, config.Logger)
+    
+    // Crear adaptadores
+    paymentAdapter := mercadolibre.NewPaymentAdapter(mlClient, capsAdapter)
+    shipmentAdapter := mercadolibre.NewShipmentAdapter(mlClient, capsAdapter)
+    qrAdapter := mercadolibre.NewQRAdapter(mlClient, capsAdapter)
+    
+    // Crear servicios
+    paymentService := usecases.NewPaymentService(paymentAdapter, capsAdapter, config.Logger)
+    shipmentService := usecases.NewShipmentService(shipmentAdapter, capsAdapter, config.Logger)
+    qrService := usecases.NewQRService(qrAdapter, capsAdapter, config.Logger)
+    
+    webhookHandler := mercadolibre.NewWebhookHandler(config.WebhookSecret)
+    
+    return &SDK{
+        config:       config,
+        Payment:      paymentService,
+        Shipment:     shipmentService,
+        QR:           qrService,
+        Capabilities: capsService,
+        Webhook:      webhookHandler,
+    }, nil
+}
+
+// Método helper para cambiar región dinámicamente
+func (s *SDK) ForCountry(countryCode string) (*SDK, error) {
+    newConfig := s.config
+    newConfig.DefaultCountry = countryCode
+    return NewSDK(newConfig)
+}
+```
+
+---
+
+### 11. Ejemplo de Uso Multi-Region: `examples/multi_region/discover_capabilities.go`
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    sdk "github.com/tu-org/mercadolibre-sdk"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    // Crear SDK
+    mlSDK, err := sdk.NewSDK(sdk.Config{
+        DefaultCountry: "PE",
+        APIKey:         "YOUR_API_KEY",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // 1. Listar regiones soportadas
+    regions, err := mlSDK.Capabilities.ListSupportedRegions(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Println("Supported regions:")
+    for _, region := range regions {
+        fmt.Printf("  - %s (%s) - Currency: %s\n", 
+            region.CountryCode, region.Locale, region.CurrencyCode)
+    }
+    
+    // 2. Explorar capacidades de Perú
+    fmt.Println("\n--- Peru Capabilities ---")
+    peCaps, err := mlSDK.Capabilities.GetCapabilities(ctx, "PE")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Payment methods in Peru:\n")
+    for _, method := range peCaps.Payment.SupportedMethods {
+        fmt.Printf("  - %s (%s): %s %.2f - %.2f\n", 
+            method.Name, 
+            method.Type,
+            peCaps.Region.CurrencyCode,
+            method.MinAmount.Amount, 
+            method.MaxAmount.Amount)
+    }
+    
+    fmt.Printf("\nCarriers in Peru:\n")
+    for _, carrier := range peCaps.Shipment.SupportedCarriers {
+        fmt.Printf("  - %s: %v\n", carrier.Name, carrier.ServiceTypes)
+    }
+    
+    // 3. Comparar con México
+    fmt.Println("\n--- Mexico Capabilities ---")
+    mxCaps, err := mlSDK.Capabilities.GetCapabilities(ctx, "MX")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Payment methods in Mexico:\n")
+    for _, method := range mxCaps.Payment.SupportedMethods {
+        fmt.Printf("  - %s (%s): %s %.2f - %.2f\n", 
+            method.Name, 
+            method.Type,
+            mxCaps.Region.CurrencyCode,
+            method.MinAmount.Amount, 
+            method.MaxAmount.Amount)
+    }
+}
+```
+
+---
+
+### 12. Ejemplo de Pago en Perú: `examples/multi_region/payment_peru.go`
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    sdk "github.com/tu-org/mercadolibre-sdk"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    // Crear SDK para Perú
+    mlSDK, err := sdk.NewSDK(sdk.Config{
+        DefaultCountry: "PE",
+        APIKey:         "YOUR_API_KEY",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Crear pago con Yape (específico de Perú)
+    payment, err := mlSDK.Payment.CreatePayment(ctx, "PE", &domain.CreatePaymentRequest{
+        ExternalReference: "order-12345",
+        Amount: domain.Money{
+            Amount:   500.00,
+            Currency: "PEN",
+        },
+        Description: "Compra en tienda online",
+        Method:      domain.PaymentMethodTransfer,  // Yape es transfer
+        Payer: domain.Payer{
+            Email:     "cliente@example.com",
+            FirstName: "Juan",
+            LastName:  "Pérez",
+            Phone:     "+51987654321",
+        },
+    })
+    
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Payment created: %s\n", payment.ID)
+    fmt.Printf("Status: %v\n", payment.Status)
+}
+```
+
+---
+
+### 13. Ejemplo de Cambio de País sin Código: `examples/migration/country_switch.go`
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    sdk "github.com/tu-org/mercadolibre-sdk"
+    "github.com/tu-org/mercadolibre-sdk/core/domain"
+)
+
+func createPayment(mlSDK *sdk.SDK, country string, amount float64, currency string) {
+    ctx := context.Background()
+    
+    // El código es IDÉNTICO para cualquier país
+    payment, err := mlSDK.Payment.CreatePayment(ctx, country, &domain.CreatePaymentRequest{
+        ExternalReference: "order-xyz",
+        Amount: domain.Money{
+            Amount:   amount,
+            Currency: currency,
+        },
+        Description: "Test payment",
+        Method:      domain.PaymentMethodCard,
+        Payer: domain.Payer{
+            Email: "test@example.com",
+        },
+    })
+    
+    if err != nil {
+        log.Printf("Error for %s: %v\n", country, err)
+        return
+    }
+    
+    fmt.Printf("Payment created in %s: %s\n", country, payment.ID)
+}
+
+func main() {
+    // Crear SDK para Perú
+    peSDK, _ := sdk.NewSDK(sdk.Config{
+        DefaultCountry: "PE",
+        APIKey:         "YOUR_API_KEY",
+    })
+    
+    // Mismo código, Perú
+    createPayment(peSDK, "PE", 500.0, "PEN")
+    
+    // Cambiar a México sin modificar lógica
+    mxSDK, _ := peSDK.ForCountry("MX")
+    
+    // Mismo código, México
+    createPayment(mxSDK, "MX", 1000.0, "MXN")
+    
+    // Cambiar a Argentina
+    arSDK, _ := peSDK.ForCountry("AR")
+    
+    // Mismo código, Argentina
+    createPayment(arSDK, "AR", 5000.0, "ARS")
+}
+```
+
+---
+
+## Secuencia de Implementación Multi-Region
+
+### Fase 1: Fundación de Capacidades (sobre SDK base existente)
+
+**Dependencia:** Fase 1-2 del plan anterior (SDK básico funcional)
+
+1. **Sistema de Capacidades**
+   - Crear `core/domain/capabilities.go`
+   - Crear `core/ports/capabilities_provider.go`
+   - Tests unitarios de modelos
+
+2. **Configuración de Perú (primer país)**
+   - Crear `providers/mercadolibre/config/capabilities/pe.yaml`
+   - Implementar `config/loader.go`
+   - Implementar `config/validator.go`
+   - Tests de carga y validación
+
+3. **Adaptador de Capacidades**
+   - Implementar `capabilities_adapter.go`
+   - Integrar con loader
+   - Tests de adaptador
+
+4. **Caso de Uso de Capacidades**
+   - Implementar `usecases/capabilities_service.go`
+   - Tests con mock
+
+5. **Integrar en SDK existente**
+   - Modificar `sdk.go` para aceptar `DefaultCountry`
+   - Exponer `Capabilities` service
+   - Tests de integración
+
+6. **Ejemplo de descubrimiento**
+   - `examples/multi_region/discover_capabilities.go`
+   - Ejecutar contra Perú
+
+---
+
+### Fase 2: Expansión a México
+
+7. **Configuración de México**
+   - Crear `providers/mercadolibre/config/capabilities/mx.yaml`
+   - Validar diferencias (SPEI, OXXO, etc.)
+
+8. **Registro de Regiones**
+   - Implementar `regions/registry.go`
+   - Endpoints regionales PE y MX
+
+9. **Validación Dinámica en Payment Service**
+   - Modificar `usecases/payment_service.go`
+   - Integrar `ValidatePaymentRequest`
+
+10. **Validación Dinámica en Shipment Service**
+    - Modificar `usecases/shipment_service.go`
+    - Integrar `ValidateShipmentRequest`
+
+11. **Ejemplos México**
+    - `examples/multi_region/payment_mexico.go`
+    - Probar SPEI, OXXO
+
+12. **Tests de Compatibilidad**
+    - Suite de tests para PE y MX
+    - Validar que el mismo código funcione
+
+---
+
+### Fase 3: Escalar a Argentina y Brasil
+
+13. **Configuración Argentina**
+    - `capabilities/ar.yaml`
+    - Rapipago, PagoFácil
+
+14. **Configuración Brasil**
+    - `capabilities/br.yaml`
+    - PIX
+
+15. **Chile**
+    - `capabilities/cl.yaml`
+
+16. **Tests de Todas las Regiones**
+    - Suite completa
+    - Coverage de todos los métodos por país
+
+---
+
+### Fase 4: Features Avanzados Multi-Region
+
+17. **Rate Limiting Regional**
+    - Implementar límites por país
+    - Respeto a capacidades
+
+18. **Monitoreo por Región**
+    - Métricas segmentadas por país
+    - Alertas específicas
+
+19. **Fallback de Regiones**
+    - Si una región falla, intentar otra
+    - Configuración de prioridades
+
+20. **Documentación Multi-Region**
+    - Guía de países soportados
+    - Diferencias operativas
+    - Mejores prácticas
+
+---
+
+## Reglas de Implementación Multi-Region (Checklist)
+
+### Para agregar un nuevo país:
+
+- [ ] Crear archivo `capabilities/{country}.yaml`
+- [ ] Definir todos los campos obligatorios
+- [ ] Agregar endpoints en `regions/registry.go`
+- [ ] Ejecutar suite de tests de capabilities
+- [ ] Crear ejemplo específico del país
+- [ ] Actualizar documentación
+- [ ] **NO modificar `core/domain/`**
+- [ ] **NO agregar condicionales `if country == "XX"`**
+- [ ] **NO modificar API pública**
+
+### Prohibido:
+
+- ❌ `if country == "PE" { /* lógica específica */ }`
+- ❌ Constantes hardcodeadas por país en dominio
+- ❌ Lógica de negocio en adaptadores regionales
+- ❌ Modificar entidades de dominio por país
+
+### Permitido:
+
+- ✅ Agregar archivos YAML de configuración
+- ✅ Extender `RegionCapabilities` con nuevos campos (siempre opcionales)
+- ✅ Agregar métodos helper en adaptadores
+- ✅ Tests específicos por país
+
+---
+
+## Verificación y Definición de Completado (DoD)
+
+### Fase 1 (Perú):
+- [ ] SDK acepta `DefaultCountry: "PE"`
+- [ ] Capabilities se cargan desde `pe.yaml`
+- [ ] Validaciones usan capabilities dinámicas
+- [ ] Ejemplo de descubrimiento ejecuta correctamente
+- [ ] Tests de capabilities pasan
+
+### Fase 2 (México):
+- [ ] SDK funciona con `DefaultCountry: "MX"`
+- [ ] Pagos con SPEI y OXXO funcionan
+- [ ] Validaciones respetan límites de MX
+- [ ] Mismo código del cliente funciona para PE y MX
+- [ ] Tests comparativos PE vs MX pasan
+
+### Fase 3 (AR, BR, CL):
+- [ ] 5 países soportados
+- [ ] Suite completa de tests pasa
+- [ ] Documentación actualizada
+- [ ] Ejemplos para cada país
+
+### Fase 4 (Production):
+- [ ] Rate limiting por región funciona
+- [ ] Métricas segmentadas
+- [ ] Guía de migración entre países
+- [ ] Zero `if country ==` en `core/`
+
+---
+
+## Trazabilidad Step → Targets → Verification
+
+| Step | Archivos/Componentes | Verificación |
+|------|---------------------|--------------|
+| 1. Capacidades | `core/domain/capabilities.go`, `core/ports/` | Compila, tipos correctos |
+| 2. Config PE | `capabilities/pe.yaml`, `loader.go` | Carga PE sin errores |
+| 3. Adaptador | `capabilities_adapter.go` | `GetCapabilities("PE")` OK |
+| 5. SDK | `sdk.go` modificado | `NewSDK(Config{DefaultCountry:"PE"})` OK |
+| 7. Config MX | `capabilities/mx.yaml` | Carga MX sin errores |
+| 9. Validación | `payment_service.go` | Rechaza monto inválido por país |
+| 11. Ejemplo MX | `payment_mexico.go` | Pago OXXO exitoso |
+| 13-15. AR/BR/CL | Archivos YAML | 5 países cargan correctamente |
+| 16. Tests | `tests/capabilities/*_test.go` | Suite completa pasa |
+
+---
+
+## Diagrama de Flujo Multi-Region
+
+```mermaid
+sequenceDiagram
+    participant Client as App Cliente
+    participant SDK as SDK
+    participant CapsService as CapabilitiesService
+    participant Loader as ConfigLoader
+    participant PaymentService as PaymentService
+    participant Adapter as ML Adapter
+    participant API as ML API (Regional)
+    
+    Client->>SDK: NewSDK({DefaultCountry: "PE"})
+    SDK->>CapsService: GetCapabilities("PE")
+    CapsService->>Loader: Load("PE")
+    Loader->>Loader: ReadFile("pe.yaml")
+    Loader-->>CapsService: RegionCapabilities
+    CapsService-->>SDK: Validated
+    SDK-->>Client: SDK instance
+    
+    Client->>SDK: CreatePayment("PE", req)
+    SDK->>PaymentService: CreatePayment("PE", req)
+    PaymentService->>CapsService: ValidatePaymentRequest("PE", req)
+    CapsService->>CapsService: Check amount, currency, method
+    CapsService-->>PaymentService: Valid
+    PaymentService->>Adapter: CreatePayment("PE", req)
+    Adapter->>Adapter: Get PE endpoints
+    Adapter->>API: POST https://api.mercadopago.com.pe/v1/payments
+    API-->>Adapter: ML Response
+    Adapter-->>PaymentService: domain.Payment
+    PaymentService-->>SDK: domain.Payment
+    SDK-->>Client: Payment created
+```
+
+---
+
+## Consideraciones Críticas
+
+### 1. **País es Configuración, No Código**
+   - El sistema NUNCA debe tener `if country == "XX"`
+   - Todo se resuelve consultando capabilities
+
+### 2. **Agregar País = Zero Código**
+   - Solo agregar YAML + tests
+   - Si requiere cambiar Go, el diseño está roto
+
+### 3. **Validaciones Dinámicas**
+   - Límites, monedas, métodos = capabilities
+   - No hardcodear ningún valor operativo
+
+### 4. **Endpoints Regionales**
+   - Cada país tiene URLs distintas
+   - Registry mapea país → URLs
+
+### 5. **Capabilities como Contrato**
+   - La app cliente consulta capabilities
+   - UI se adapta a lo disponible
+
+### 6. **Testing**
+   - Tests genéricos que iteran sobre países
+   - Fixtures específicos por país
+
+### 7. **Migración Entre Países**
+   - `sdk.ForCountry("MX")` crea nueva instancia
+   - Mismo código del cliente
+
+### 8. **Evolución**
+   - Nuevos campos en capabilities = opcionales
+   - Backward compatibility obligatoria
+
+---
+
+## Ejemplo de Éxito
+
+**Antes (mal diseño):**
+```go
+// ❌ Hardcoded, no escalable
+if country == "PE" {
+    maxAmount = 50000
+    methods = []string{"yape", "card"}
+} else if country == "MX" {
+    maxAmount = 500000
+    methods = []string{"spei", "oxxo", "card"}
+}
+```
+
+**Después (diseño correcto):**
+```go
+// ✅ Dinámico, escalable
+caps, _ := sdk.Capabilities.GetCapabilities(ctx, country)
+maxAmount := caps.Payment.MaxAmount.Amount
+methods := caps.Payment.SupportedMethods
+```
+
+---
+
+## Conclusión
+
+Este diseño multi-region:
+- ✅ Trata países como **datos**, no como **código**
+- ✅ Permite agregar países **sin modificar Go**
+- ✅ Mantiene **API pública universal**
+- ✅ Validaciones **dinámicas por capabilities**
+- ✅ Escalable a **decenas de países sin complejidad**
+- ✅ Cliente usa **mismo código** para todos los países
+
+**La clave:** Si agregar un país requiere abrir un archivo `.go`, el SDK falló en su propósito de universalidad.

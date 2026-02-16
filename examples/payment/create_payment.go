@@ -7,7 +7,6 @@ import (
 
 	sdk "github.com/zentry/sdk-mercadolibre"
 	"github.com/zentry/sdk-mercadolibre/core/domain"
-	"github.com/zentry/sdk-mercadolibre/pkg/logger"
 )
 
 func main() {
@@ -16,7 +15,6 @@ func main() {
 	client, err := sdk.New(sdk.Config{
 		AccessToken: "YOUR_ACCESS_TOKEN",
 		Country:     "PE",
-		Logger:      logger.NewDefaultLogger(logger.LevelInfo),
 	})
 	if err != nil {
 		log.Fatal(err)

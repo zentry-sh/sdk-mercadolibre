@@ -2,6 +2,8 @@ package mercadolibre
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/zentry/sdk-mercadolibre/core/errors"
@@ -13,7 +15,7 @@ type AuthClient struct {
 	http         *httputil.Client
 	clientID     string
 	clientSecret string
-	logger       logger.Logger
+	log          logger.Logger
 }
 
 type TokenResponse struct {
@@ -34,9 +36,9 @@ type Credentials struct {
 
 func NewAuthClient(country, clientID, clientSecret string, log logger.Logger) *AuthClient {
 	endpoints := GetEndpoints(country)
-	
+
 	if log == nil {
-		log = logger.NewNopLogger()
+		log = logger.Nop()
 	}
 
 	return &AuthClient{
@@ -47,7 +49,7 @@ func NewAuthClient(country, clientID, clientSecret string, log logger.Logger) *A
 		}),
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		logger:       log,
+		log:          log,
 	}
 }
 
@@ -61,8 +63,7 @@ func (c *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI string)
 	}
 
 	var resp TokenResponse
-	err := c.http.Post(ctx, "", req, &resp)
-	if err != nil {
+	if err := c.http.Post(ctx, "", req, &resp); err != nil {
 		return nil, err
 	}
 
@@ -78,8 +79,7 @@ func (c *AuthClient) RefreshToken(ctx context.Context, refreshToken string) (*Cr
 	}
 
 	var resp TokenResponse
-	err := c.http.Post(ctx, "", req, &resp)
-	if err != nil {
+	if err := c.http.Post(ctx, "", req, &resp); err != nil {
 		return nil, err
 	}
 
@@ -105,24 +105,20 @@ func (c *Credentials) ShouldRefresh() bool {
 
 func BuildAuthorizationURL(country, clientID, redirectURI string, scopes []string) string {
 	endpoints := GetEndpoints(country)
-	baseURL := endpoints.BaseURL
 
-	url := baseURL + "/authorization?response_type=code"
-	url += "&client_id=" + clientID
-	url += "&redirect_uri=" + redirectURI
-	
+	params := url.Values{}
+	params.Set("response_type", "code")
+	params.Set("client_id", clientID)
+	params.Set("redirect_uri", redirectURI)
 	if len(scopes) > 0 {
-		scope := ""
-		for i, s := range scopes {
-			if i > 0 {
-				scope += " "
-			}
-			scope += s
-		}
-		url += "&scope=" + scope
+		params.Set("scope", strings.Join(scopes, " "))
 	}
 
-	return url
+	u, err := url.JoinPath(endpoints.BaseURL, "/authorization")
+	if err != nil {
+		return ""
+	}
+	return u + "?" + params.Encode()
 }
 
 type TokenManager struct {
@@ -157,7 +153,7 @@ func (m *TokenManager) GetAccessToken(ctx context.Context) (string, error) {
 	}
 
 	m.credentials = newCreds
-	
+
 	if m.onRefresh != nil {
 		m.onRefresh(newCreds)
 	}
