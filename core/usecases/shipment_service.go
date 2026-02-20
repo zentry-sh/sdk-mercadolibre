@@ -7,6 +7,7 @@ import (
 	"github.com/zentry/sdk-mercadolibre/core/errors"
 	"github.com/zentry/sdk-mercadolibre/core/ports"
 	"github.com/zentry/sdk-mercadolibre/pkg/logger"
+	"github.com/zentry/sdk-mercadolibre/pkg/sanitize"
 )
 
 type ShipmentService struct {
@@ -25,6 +26,13 @@ func NewShipmentService(provider ports.ShipmentProvider, log logger.Logger) *Shi
 }
 
 func (s *ShipmentService) CreateShipment(ctx context.Context, req *domain.CreateShipmentRequest) (*domain.Shipment, error) {
+	req.ExternalReference = sanitize.String(req.ExternalReference)
+	req.OrderID = sanitize.ID(req.OrderID)
+	req.CarrierID = sanitize.ID(req.CarrierID)
+	req.ServiceType = sanitize.String(req.ServiceType)
+	req.Origin = sanitizeAddress(req.Origin)
+	req.Destination = sanitizeAddress(req.Destination)
+
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, err
 	}
@@ -33,6 +41,7 @@ func (s *ShipmentService) CreateShipment(ctx context.Context, req *domain.Create
 }
 
 func (s *ShipmentService) GetShipment(ctx context.Context, id string) (*domain.Shipment, error) {
+	id = sanitize.ID(id)
 	if id == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
@@ -40,6 +49,7 @@ func (s *ShipmentService) GetShipment(ctx context.Context, id string) (*domain.S
 }
 
 func (s *ShipmentService) GetShipmentByOrder(ctx context.Context, orderID string) (*domain.Shipment, error) {
+	orderID = sanitize.ID(orderID)
 	if orderID == "" {
 		return nil, errors.InvalidRequest("order id is required")
 	}
@@ -47,6 +57,8 @@ func (s *ShipmentService) GetShipmentByOrder(ctx context.Context, orderID string
 }
 
 func (s *ShipmentService) ListShipments(ctx context.Context, filters domain.ShipmentFilters) ([]*domain.Shipment, error) {
+	filters.OrderID = sanitize.ID(filters.OrderID)
+	filters.ExternalReference = sanitize.String(filters.ExternalReference)
 	if filters.Limit <= 0 {
 		filters.Limit = 50
 	}
@@ -57,13 +69,19 @@ func (s *ShipmentService) ListShipments(ctx context.Context, filters domain.Ship
 }
 
 func (s *ShipmentService) UpdateShipment(ctx context.Context, id string, req *domain.UpdateShipmentRequest) (*domain.Shipment, error) {
+	id = sanitize.ID(id)
 	if id == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
+	}
+	if req.Destination != nil {
+		addr := sanitizeAddress(*req.Destination)
+		req.Destination = &addr
 	}
 	return s.provider.UpdateShipment(ctx, id, req)
 }
 
 func (s *ShipmentService) CancelShipment(ctx context.Context, id string) error {
+	id = sanitize.ID(id)
 	if id == "" {
 		return errors.InvalidRequest("shipment id is required")
 	}
@@ -71,6 +89,7 @@ func (s *ShipmentService) CancelShipment(ctx context.Context, id string) error {
 }
 
 func (s *ShipmentService) GetTracking(ctx context.Context, shipmentID string) ([]domain.ShipmentEvent, error) {
+	shipmentID = sanitize.ID(shipmentID)
 	if shipmentID == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
@@ -78,6 +97,7 @@ func (s *ShipmentService) GetTracking(ctx context.Context, shipmentID string) ([
 }
 
 func (s *ShipmentService) GetLabel(ctx context.Context, shipmentID string) ([]byte, error) {
+	shipmentID = sanitize.ID(shipmentID)
 	if shipmentID == "" {
 		return nil, errors.InvalidRequest("shipment id is required")
 	}
@@ -92,4 +112,16 @@ func (s *ShipmentService) validateCreateRequest(req *domain.CreateShipmentReques
 		return errors.InvalidRequest("destination address is required")
 	}
 	return nil
+}
+
+func sanitizeAddress(addr domain.Address) domain.Address {
+	addr.Street = sanitize.String(addr.Street)
+	addr.Number = sanitize.String(addr.Number)
+	addr.Floor = sanitize.String(addr.Floor)
+	addr.Apartment = sanitize.String(addr.Apartment)
+	addr.City = sanitize.String(addr.City)
+	addr.State = sanitize.String(addr.State)
+	addr.ZipCode = sanitize.String(addr.ZipCode)
+	addr.Country = sanitize.String(addr.Country)
+	return addr
 }

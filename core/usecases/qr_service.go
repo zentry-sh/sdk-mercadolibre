@@ -7,6 +7,7 @@ import (
 	"github.com/zentry/sdk-mercadolibre/core/errors"
 	"github.com/zentry/sdk-mercadolibre/core/ports"
 	"github.com/zentry/sdk-mercadolibre/pkg/logger"
+	"github.com/zentry/sdk-mercadolibre/pkg/sanitize"
 )
 
 type QRService struct {
@@ -25,6 +26,13 @@ func NewQRService(provider ports.QRProvider, log logger.Logger) *QRService {
 }
 
 func (s *QRService) CreateQR(ctx context.Context, req *domain.CreateQRRequest) (*domain.QRCode, error) {
+	req.ExternalReference = sanitize.String(req.ExternalReference)
+	req.POSID = sanitize.ID(req.POSID)
+	req.CollectorID = sanitize.ID(req.CollectorID)
+	req.StoreID = sanitize.ID(req.StoreID)
+	req.Description = sanitize.String(req.Description)
+	req.NotificationURL = sanitize.String(req.NotificationURL)
+
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, err
 	}
@@ -33,6 +41,7 @@ func (s *QRService) CreateQR(ctx context.Context, req *domain.CreateQRRequest) (
 }
 
 func (s *QRService) GetQR(ctx context.Context, qrID string) (*domain.QRCode, error) {
+	qrID = sanitize.ID(qrID)
 	if qrID == "" {
 		return nil, errors.InvalidRequest("QR id is required")
 	}
@@ -40,6 +49,7 @@ func (s *QRService) GetQR(ctx context.Context, qrID string) (*domain.QRCode, err
 }
 
 func (s *QRService) GetQRByExternalReference(ctx context.Context, ref string) (*domain.QRCode, error) {
+	ref = sanitize.String(ref)
 	if ref == "" {
 		return nil, errors.InvalidRequest("external reference is required")
 	}
@@ -47,6 +57,7 @@ func (s *QRService) GetQRByExternalReference(ctx context.Context, ref string) (*
 }
 
 func (s *QRService) DeleteQR(ctx context.Context, qrID string) error {
+	qrID = sanitize.ID(qrID)
 	if qrID == "" {
 		return errors.InvalidRequest("QR id is required")
 	}
@@ -54,6 +65,7 @@ func (s *QRService) DeleteQR(ctx context.Context, qrID string) error {
 }
 
 func (s *QRService) GetQRPayment(ctx context.Context, qrID string) (*domain.Payment, error) {
+	qrID = sanitize.ID(qrID)
 	if qrID == "" {
 		return nil, errors.InvalidRequest("QR id is required")
 	}
@@ -61,6 +73,10 @@ func (s *QRService) GetQRPayment(ctx context.Context, qrID string) (*domain.Paym
 }
 
 func (s *QRService) RegisterPOS(ctx context.Context, req *domain.RegisterPOSRequest) (*domain.POSInfo, error) {
+	req.Name = sanitize.String(req.Name)
+	req.ExternalID = sanitize.ID(req.ExternalID)
+	req.StoreID = sanitize.ID(req.StoreID)
+
 	if err := s.validateRegisterPOSRequest(req); err != nil {
 		return nil, err
 	}
@@ -69,6 +85,7 @@ func (s *QRService) RegisterPOS(ctx context.Context, req *domain.RegisterPOSRequ
 }
 
 func (s *QRService) GetPOS(ctx context.Context, posID string) (*domain.POSInfo, error) {
+	posID = sanitize.ID(posID)
 	if posID == "" {
 		return nil, errors.InvalidRequest("POS id is required")
 	}
@@ -76,10 +93,12 @@ func (s *QRService) GetPOS(ctx context.Context, posID string) (*domain.POSInfo, 
 }
 
 func (s *QRService) ListPOS(ctx context.Context, storeID string) ([]*domain.POSInfo, error) {
+	storeID = sanitize.ID(storeID)
 	return s.provider.ListPOS(ctx, storeID)
 }
 
 func (s *QRService) DeletePOS(ctx context.Context, posID string) error {
+	posID = sanitize.ID(posID)
 	if posID == "" {
 		return errors.InvalidRequest("POS id is required")
 	}
@@ -87,6 +106,10 @@ func (s *QRService) DeletePOS(ctx context.Context, posID string) error {
 }
 
 func (s *QRService) RegisterStore(ctx context.Context, req *domain.RegisterStoreRequest) (*domain.StoreInfo, error) {
+	req.Name = sanitize.String(req.Name)
+	req.ExternalID = sanitize.ID(req.ExternalID)
+	req.Location = sanitizeAddress(req.Location)
+
 	if req.Name == "" {
 		return nil, errors.InvalidRequest("store name is required")
 	}
@@ -94,6 +117,7 @@ func (s *QRService) RegisterStore(ctx context.Context, req *domain.RegisterStore
 }
 
 func (s *QRService) GetStore(ctx context.Context, storeID string) (*domain.StoreInfo, error) {
+	storeID = sanitize.ID(storeID)
 	if storeID == "" {
 		return nil, errors.InvalidRequest("store id is required")
 	}

@@ -230,6 +230,181 @@ func (c *Client) shouldRetry(err error) bool {
 	return false
 }
 
+type RequestOption func(*http.Request)
+
+func WithHeader(key, value string) RequestOption {
+	return func(r *http.Request) { r.Header.Set(key, value) }
+}
+
+func (c *Client) DoWithOptions(ctx context.Context, method, path string, body any, result any, opts ...RequestOption) error {
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = json.Marshal(body)
+		if err != nil {
+			return errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "failed to marshal request body", err)
+		}
+	}
+	return c.doWithRetryOpts(ctx, method, path, bodyBytes, result, opts)
+}
+
+func (c *Client) DoRaw(ctx context.Context, method, path string, opts ...RequestOption) ([]byte, error) {
+	var lastErr error
+	backoff := c.retryConfig.InitialBackoff
+
+	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
+		if attempt > 0 {
+			c.log.Debug("retrying request", "attempt", attempt, "backoff_ms", backoff.Milliseconds())
+			select {
+			case <-ctx.Done():
+				return nil, errors.NewErrorWithCause(errors.ErrCodeTimeout, "context cancelled", ctx.Err())
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > c.retryConfig.MaxBackoff {
+				backoff = c.retryConfig.MaxBackoff
+			}
+		}
+
+		data, err := c.doRawRequest(ctx, method, path, opts)
+		if err != nil {
+			lastErr = err
+			if !c.shouldRetry(err) {
+				return nil, err
+			}
+			continue
+		}
+		return data, nil
+	}
+	return nil, lastErr
+}
+
+func (c *Client) doRawRequest(ctx context.Context, method, path string, opts []RequestOption) ([]byte, error) {
+	u, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		return nil, errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "invalid request path", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	if err != nil {
+		return nil, errors.NewErrorWithCause(errors.ErrCodeInternal, "failed to create request", err)
+	}
+
+	req.Header.Set("Accept", "application/octet-stream")
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	}
+	for _, opt := range opts {
+		opt(req)
+	}
+
+	c.log.Debug("http request raw", "method", method, "path", path)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.NewErrorWithCause(errors.ErrCodeNetworkError, "request failed", err)
+	}
+	defer resp.Body.Close()
+
+	limited := io.LimitReader(resp.Body, maxResponseBytes)
+	respBody, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, errors.NewErrorWithCause(errors.ErrCodeNetworkError, "failed to read response body", err)
+	}
+
+	c.log.Debug("http response raw", "status", resp.StatusCode, "bytes", len(respBody))
+
+	if resp.StatusCode >= 400 {
+		return nil, c.handleErrorResponse(resp.StatusCode, respBody)
+	}
+
+	return respBody, nil
+}
+
+func (c *Client) doWithRetryOpts(ctx context.Context, method, path string, body []byte, result any, opts []RequestOption) error {
+	var lastErr error
+	backoff := c.retryConfig.InitialBackoff
+
+	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
+		if attempt > 0 {
+			c.log.Debug("retrying request", "attempt", attempt, "backoff_ms", backoff.Milliseconds())
+			select {
+			case <-ctx.Done():
+				return errors.NewErrorWithCause(errors.ErrCodeTimeout, "context cancelled", ctx.Err())
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > c.retryConfig.MaxBackoff {
+				backoff = c.retryConfig.MaxBackoff
+			}
+		}
+
+		if err := c.doRequestOpts(ctx, method, path, body, result, opts); err != nil {
+			lastErr = err
+			if !c.shouldRetry(err) {
+				return err
+			}
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func (c *Client) doRequestOpts(ctx context.Context, method, path string, body []byte, result any, opts []RequestOption) error {
+	u, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		return errors.NewErrorWithCause(errors.ErrCodeInvalidRequest, "invalid request path", err)
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
+	if err != nil {
+		return errors.NewErrorWithCause(errors.ErrCodeInternal, "failed to create request", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	}
+	for _, opt := range opts {
+		opt(req)
+	}
+
+	c.log.Debug("http request", "method", method, "path", path)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.NewErrorWithCause(errors.ErrCodeNetworkError, "request failed", err)
+	}
+	defer resp.Body.Close()
+
+	limited := io.LimitReader(resp.Body, maxResponseBytes)
+	respBody, err := io.ReadAll(limited)
+	if err != nil {
+		return errors.NewErrorWithCause(errors.ErrCodeNetworkError, "failed to read response body", err)
+	}
+
+	c.log.Debug("http response", "status", resp.StatusCode, "bytes", len(respBody))
+
+	if resp.StatusCode >= 400 {
+		return c.handleErrorResponse(resp.StatusCode, respBody)
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return errors.NewErrorWithCause(errors.ErrCodeInternal, "failed to unmarshal response", err)
+		}
+	}
+
+	return nil
+}
+
 func (c *Client) Get(ctx context.Context, path string, result any) error {
 	return c.Do(ctx, http.MethodGet, path, nil, result)
 }
@@ -244,4 +419,20 @@ func (c *Client) Put(ctx context.Context, path string, body any, result any) err
 
 func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.Do(ctx, http.MethodDelete, path, nil, nil)
+}
+
+func (c *Client) GetWithOptions(ctx context.Context, path string, result any, opts ...RequestOption) error {
+	return c.DoWithOptions(ctx, http.MethodGet, path, nil, result, opts...)
+}
+
+func (c *Client) PostWithOptions(ctx context.Context, path string, body any, result any, opts ...RequestOption) error {
+	return c.DoWithOptions(ctx, http.MethodPost, path, body, result, opts...)
+}
+
+func (c *Client) PutWithOptions(ctx context.Context, path string, body any, result any, opts ...RequestOption) error {
+	return c.DoWithOptions(ctx, http.MethodPut, path, body, result, opts...)
+}
+
+func (c *Client) DeleteWithOptions(ctx context.Context, path string, opts ...RequestOption) error {
+	return c.DoWithOptions(ctx, http.MethodDelete, path, nil, nil, opts...)
 }

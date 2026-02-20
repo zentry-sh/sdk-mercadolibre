@@ -10,6 +10,8 @@ import (
 	"github.com/zentry/sdk-mercadolibre/pkg/logger"
 	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre"
 	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/payment"
+	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/qr"
+	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/shipment"
 )
 
 type SDK struct {
@@ -51,6 +53,12 @@ func New(config Config) (*SDK, error) {
 	paymentAdapter := payment.NewAdapter(client.PaymentsHTTP(), log)
 	paymentService := usecases.NewPaymentService(paymentAdapter, log)
 
+	shipmentAdapter := shipment.NewAdapter(client.ShipmentsHTTP(), log)
+	shipmentService := usecases.NewShipmentService(shipmentAdapter, log)
+
+	qrAdapter := qr.NewAdapter(client.QRHTTP(), log)
+	qrService := usecases.NewQRService(qrAdapter, log)
+
 	return &SDK{
 		config: config,
 		client: client,
@@ -59,8 +67,16 @@ func New(config Config) (*SDK, error) {
 			capabilities: capabilitiesService,
 			country:      config.Country,
 		},
-		Shipment: &ShipmentAPI{},
-		QR:       &QRAPI{},
+		Shipment: &ShipmentAPI{
+			service:      shipmentService,
+			capabilities: capabilitiesService,
+			country:      config.Country,
+		},
+		QR: &QRAPI{
+			service:      qrService,
+			capabilities: capabilitiesService,
+			country:      config.Country,
+		},
 		Capabilities: &CapabilitiesAPI{
 			service: capabilitiesService,
 			country: config.Country,
@@ -123,150 +139,104 @@ func (p *PaymentAPI) ListRefunds(ctx context.Context, paymentID string) ([]*doma
 }
 
 type ShipmentAPI struct {
-	service *usecases.ShipmentService
+	service      *usecases.ShipmentService
+	capabilities *usecases.CapabilitiesService
+	country      string
 }
 
 func (s *ShipmentAPI) Create(ctx context.Context, req *domain.CreateShipmentRequest) (*domain.Shipment, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
+	if s.capabilities != nil {
+		if err := s.capabilities.ValidateShipmentRequest(ctx, s.country, req); err != nil {
+			return nil, err
+		}
 	}
 	return s.service.CreateShipment(ctx, req)
 }
 
 func (s *ShipmentAPI) Get(ctx context.Context, id string) (*domain.Shipment, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.GetShipment(ctx, id)
 }
 
 func (s *ShipmentAPI) GetByOrder(ctx context.Context, orderID string) (*domain.Shipment, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.GetShipmentByOrder(ctx, orderID)
 }
 
 func (s *ShipmentAPI) List(ctx context.Context, filters domain.ShipmentFilters) ([]*domain.Shipment, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.ListShipments(ctx, filters)
 }
 
 func (s *ShipmentAPI) Update(ctx context.Context, id string, req *domain.UpdateShipmentRequest) (*domain.Shipment, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.UpdateShipment(ctx, id, req)
 }
 
 func (s *ShipmentAPI) Cancel(ctx context.Context, id string) error {
-	if s.service == nil {
-		return errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.CancelShipment(ctx, id)
 }
 
 func (s *ShipmentAPI) GetTracking(ctx context.Context, shipmentID string) ([]domain.ShipmentEvent, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.GetTracking(ctx, shipmentID)
 }
 
 func (s *ShipmentAPI) GetLabel(ctx context.Context, shipmentID string) ([]byte, error) {
-	if s.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "shipment service not initialized")
-	}
 	return s.service.GetLabel(ctx, shipmentID)
 }
 
 type QRAPI struct {
-	service *usecases.QRService
+	service      *usecases.QRService
+	capabilities *usecases.CapabilitiesService
+	country      string
 }
 
 func (q *QRAPI) Create(ctx context.Context, req *domain.CreateQRRequest) (*domain.QRCode, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
+	if q.capabilities != nil {
+		if err := q.capabilities.ValidateQRRequest(ctx, q.country, req); err != nil {
+			return nil, err
+		}
 	}
 	return q.service.CreateQR(ctx, req)
 }
 
 func (q *QRAPI) Get(ctx context.Context, qrID string) (*domain.QRCode, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.GetQR(ctx, qrID)
 }
 
 func (q *QRAPI) GetByExternalReference(ctx context.Context, ref string) (*domain.QRCode, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.GetQRByExternalReference(ctx, ref)
 }
 
 func (q *QRAPI) Delete(ctx context.Context, qrID string) error {
-	if q.service == nil {
-		return errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.DeleteQR(ctx, qrID)
 }
 
 func (q *QRAPI) GetPayment(ctx context.Context, qrID string) (*domain.Payment, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.GetQRPayment(ctx, qrID)
 }
 
 func (q *QRAPI) RegisterPOS(ctx context.Context, req *domain.RegisterPOSRequest) (*domain.POSInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.RegisterPOS(ctx, req)
 }
 
 func (q *QRAPI) GetPOS(ctx context.Context, posID string) (*domain.POSInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.GetPOS(ctx, posID)
 }
 
 func (q *QRAPI) ListPOS(ctx context.Context, storeID string) ([]*domain.POSInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.ListPOS(ctx, storeID)
 }
 
 func (q *QRAPI) DeletePOS(ctx context.Context, posID string) error {
-	if q.service == nil {
-		return errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.DeletePOS(ctx, posID)
 }
 
 func (q *QRAPI) RegisterStore(ctx context.Context, req *domain.RegisterStoreRequest) (*domain.StoreInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.RegisterStore(ctx, req)
 }
 
 func (q *QRAPI) GetStore(ctx context.Context, storeID string) (*domain.StoreInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.GetStore(ctx, storeID)
 }
 
 func (q *QRAPI) ListStores(ctx context.Context) ([]*domain.StoreInfo, error) {
-	if q.service == nil {
-		return nil, errors.NewError(errors.ErrCodeInternal, "QR service not initialized")
-	}
 	return q.service.ListStores(ctx)
 }
 
