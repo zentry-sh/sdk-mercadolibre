@@ -54,7 +54,7 @@ Para desarrollo y testing necesitas **dos conjuntos de credenciales**:
 
 ---
 
-## Fase 2: Implementacion de Shipments
+## Fase 2: Implementacion de Shipments [COMPLETADA]
 
 ### Objetivo
 Implementar el adapter de Mercado Libre Shipments con CRUD completo, tracking y etiquetas.
@@ -105,7 +105,7 @@ providers/mercadolibre/shipment/
 
 ---
 
-## Fase 3: Implementacion de QR / Instore
+## Fase 3: Implementacion de QR / Instore [COMPLETADA]
 
 ### Objetivo
 Implementar el adapter de Mercado Pago QR para pagos presenciales con punto de venta.
@@ -175,7 +175,7 @@ y almacenarlo en el Client.
 
 ---
 
-## Fase 4: Webhook Handler con HMAC
+## Fase 4: Webhook Handler con HMAC [COMPLETADA]
 
 ### Objetivo
 Implementar validacion de firma y parsing de webhooks de Mercado Pago.
@@ -238,23 +238,32 @@ Tests contra la API real (sandbox), manejo de edge cases, documentacion.
 ## Orden de Ejecucion Recomendado
 
 ```
-Fase 2 (Shipments)  ──┐
+Fase 2 (Shipments)  ──┐  [DONE]
                        ├──> Fase 4 (Webhooks) ──> Fase 5 (Integration Tests)
-Fase 3 (QR/Instore) ──┘
+Fase 3 (QR/Instore) ──┘  [DONE]   [DONE]
 ```
 
-Fases 2 y 3 son independientes y se pueden trabajar en paralelo.
-Fase 4 depende de tener al menos Payments funcional (ya lo tenemos).
-Fase 5 requiere API keys y que las fases 2-4 esten completas.
+Fases 2, 3 y 4 completadas.
+Fase 5 requiere API keys y que las fases 2-4 esten completas (ya lo estan).
 
 ---
 
 ## Metricas de Completitud
 
-| Modulo | Fase 1 (actual) | Fase 2 | Fase 3 | Fase 4 | Fase 5 |
-|--------|-----------------|--------|--------|--------|--------|
-| Payment | 100% | 100% | 100% | 100% | 100% |
-| Shipment | 5% (stubs) | 90% | 90% | 90% | 100% |
-| QR | 5% (stubs) | 5% | 90% | 90% | 100% |
-| Webhooks | 0% (interface) | 0% | 0% | 90% | 100% |
-| Tests | 30% | 50% | 70% | 85% | 100% |
+| Modulo | Fase 1 | Fase 2 | Fase 3 | Fase 4 | Fase 5 |
+|--------|--------|--------|--------|--------|--------|
+| Payment | 100% | 100% | 100% | - | - |
+| Shipment | 5% (stubs) | 100% | 100% | - | - |
+| QR | 5% (stubs) | 5% | 100% | - | - |
+| Webhooks | 0% (interface) | 0% | 0% | 100% | - |
+| Tests | 30% | 50% | 85% | 100% | - |
+
+### Logros Fase 2+3
+- Shipment adapter completo: GET shipment, tracking, history, labels (PDF via DoRaw)
+- QR adapter completo: Orders, POS, Stores CRUD con idempotency
+- httputil.Client extendido: RequestOption pattern, DoRaw para binarios
+- pkg/idempotency creado para X-Idempotency-Key (UUIDv4)
+- Sanitizacion completa en ShipmentService y QRService
+- Wiring en sdk.go: ShipmentAPI y QRAPI conectados a providers reales
+- Mocks: MockShipmentProvider (8 metodos), MockQRProvider (12 metodos)
+- Tests unitarios para services + mappers (shipment, qr) - 100% pass

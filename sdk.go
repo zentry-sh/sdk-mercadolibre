@@ -3,6 +3,8 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/zentry/sdk-mercadolibre/core/domain"
 	"github.com/zentry/sdk-mercadolibre/core/errors"
@@ -12,6 +14,7 @@ import (
 	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/payment"
 	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/qr"
 	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/shipment"
+	"github.com/zentry/sdk-mercadolibre/providers/mercadolibre/webhook"
 )
 
 type SDK struct {
@@ -20,6 +23,7 @@ type SDK struct {
 	Payment      *PaymentAPI
 	Shipment     *ShipmentAPI
 	QR           *QRAPI
+	Webhook      *WebhookAPI
 	Capabilities *CapabilitiesAPI
 }
 
@@ -59,6 +63,9 @@ func New(config Config) (*SDK, error) {
 	qrAdapter := qr.NewAdapter(client.QRHTTP(), log)
 	qrService := usecases.NewQRService(qrAdapter, log)
 
+	webhookHandler := webhook.NewHandler(log)
+	webhookService := usecases.NewWebhookService(webhookHandler, log)
+
 	return &SDK{
 		config: config,
 		client: client,
@@ -76,6 +83,10 @@ func New(config Config) (*SDK, error) {
 			service:      qrService,
 			capabilities: capabilitiesService,
 			country:      config.Country,
+		},
+		Webhook: &WebhookAPI{
+			service: webhookService,
+			secret:  config.WebhookSecret,
 		},
 		Capabilities: &CapabilitiesAPI{
 			service: capabilitiesService,
@@ -238,6 +249,85 @@ func (q *QRAPI) GetStore(ctx context.Context, storeID string) (*domain.StoreInfo
 
 func (q *QRAPI) ListStores(ctx context.Context) ([]*domain.StoreInfo, error) {
 	return q.service.ListStores(ctx)
+}
+
+// WebhookAPI exposes webhook validation and parsing to SDK consumers.
+type WebhookAPI struct {
+	service *usecases.WebhookService
+	secret  string
+}
+
+// WebhookHandlerFunc is the callback signature for processing validated webhook events.
+type WebhookHandlerFunc func(ctx context.Context, event *domain.WebhookEvent) error
+
+// Process validates the HMAC signature and parses the webhook payload in a single call.
+func (w *WebhookAPI) Process(ctx context.Context, req domain.WebhookRequest) (*domain.WebhookEvent, error) {
+	return w.service.Process(ctx, req, w.secret)
+}
+
+// Validate only checks the HMAC-SHA256 signature without parsing the body.
+func (w *WebhookAPI) Validate(ctx context.Context, req domain.WebhookRequest) error {
+	return w.service.ValidateSignature(ctx, req, w.secret)
+}
+
+// Parse deserializes the webhook payload without signature validation.
+// Use this only if you have already validated the signature externally.
+func (w *WebhookAPI) Parse(ctx context.Context, payload []byte) (*domain.WebhookEvent, error) {
+	return w.service.Parse(ctx, payload)
+}
+
+// maxWebhookBody limits the webhook request body to 10 MiB (consistent with httputil.Client).
+const maxWebhookBody = 10 << 20
+
+// HTTPHandler returns a net/http Handler that extracts webhook headers,
+// validates the HMAC-SHA256 signature, parses the event, and calls fn.
+// The handler responds 200 on success, 400 on bad request, and 401 on
+// signature verification failure — all within Mercado Pago's 22-second window.
+//
+// Usage:
+//
+//	http.Handle("/webhooks", client.Webhook.HTTPHandler(func(ctx context.Context, event *domain.WebhookEvent) error {
+//	    log.Printf("event: %s data_id: %s", event.Type, event.DataID)
+//	    return nil
+//	}))
+func (w *WebhookAPI) HTTPHandler(fn WebhookHandlerFunc) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(rw, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBody))
+		defer r.Body.Close()
+		if err != nil {
+			http.Error(rw, "failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		req := domain.WebhookRequest{
+			Body:      body,
+			Signature: r.Header.Get("x-signature"),
+			RequestID: r.Header.Get("x-request-id"),
+			DataID:    r.URL.Query().Get("data.id"),
+		}
+
+		event, err := w.Process(r.Context(), req)
+		if err != nil {
+			if sdkErr, ok := err.(*errors.SDKError); ok && sdkErr.Code == errors.ErrCodeInvalidWebhook {
+				http.Error(rw, sdkErr.Message, http.StatusUnauthorized)
+				return
+			}
+			http.Error(rw, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if err := fn(r.Context(), event); err != nil {
+			http.Error(rw, "handler error", http.StatusInternalServerError)
+			return
+		}
+
+		rw.WriteHeader(http.StatusOK)
+	})
 }
 
 type CapabilitiesAPI struct {

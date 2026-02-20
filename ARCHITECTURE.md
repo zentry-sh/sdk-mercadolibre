@@ -136,27 +136,21 @@ sdk.go + config.go       <- API publica. Orquesta todo
 | `core/errors/` | Completo | 21 codigos de error, constructores, helpers |
 | `pkg/logger/` | Completo | Interface minimal + Nop + Func adapter |
 | `pkg/sanitize/` | Completo | String, ID, Email, CountryCode, CurrencyCode |
-| `pkg/httputil/` | Completo | Client con retry, backoff, LimitReader, error mapping |
+| `pkg/httputil/` | Completo | Client con retry, backoff, LimitReader, RequestOption, DoRaw |
+| `pkg/idempotency/` | Completo | UUIDv4 generator para X-Idempotency-Key |
 | `providers/ml/auth` | Completo | OAuth2 code exchange, refresh, TokenManager |
-| `providers/ml/payment` | Completo | Adapter + Mapper + Models. CRUD completo contra API real |
+| `providers/ml/payment` | Completo | Adapter + Mapper + Models. CRUD completo |
+| `providers/ml/shipment` | Completo | Adapter + Mapper + Models. GET, tracking, labels (PDF) |
+| `providers/ml/qr` | Completo | Adapter + Mapper + Models. Orders, POS, Stores CRUD |
 | `providers/ml/config` | Completo | Loader YAML con cache, 6 paises |
 | `providers/ml/capabilities` | Completo | Validacion por capacidades |
-| `sdk.go` | Parcial | Payment API funcional. Shipment/QR instanciados pero sin provider |
-| Tests | Parcial | Unit tests para payment service + domain. Faltan shipment/QR |
+| `sdk.go` | Completo | Payment, Shipment, QR, Webhook APIs conectados a providers reales |
+| Tests unitarios | Completo | Payment, Shipment, QR, Webhook services + mappers + HMAC. 100% pass |
 
-### Pendiente (Stubs)
+### Pendiente
 | Modulo | Estado | Que falta |
 |--------|--------|-----------|
-| `providers/ml/shipment/adapter.go` | Stub | Todos los metodos retornan `nil, nil` |
-| `providers/ml/qr/adapter.go` | Stub | Todos los metodos retornan `nil, nil` |
-| Shipment models + mapper | No existe | Falta crear `models.go` y `mapper.go` en shipment/ |
-| QR models + mapper | No existe | Falta crear `models.go` y `mapper.go` en qr/ |
-| Webhook handler | Solo interface | Falta implementacion HMAC + parsing |
-| `sdk.go` wiring | Parcial | ShipmentAPI y QRAPI no conectados a providers |
-| Tests shipment | No existe | Unit tests para ShipmentService |
-| Tests QR | No existe | Unit tests para QRService |
-| Tests capabilities | Parcial | Solo test basico |
-| Integration tests | No existe | Tests contra API real (requiere API keys) |
+| Tests integracion | No existe | Tests contra API real (requiere API keys) |
 
 ---
 
