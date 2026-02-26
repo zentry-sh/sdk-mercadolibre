@@ -105,6 +105,8 @@ client.QR.ListStores(ctx)                         // Listar sucursales
 
 ### Webhooks
 
+El SDK incluye soporte completo para webhooks de Mercado Libre/Pago con validación HMAC-SHA256 integrada.
+
 ```go
 client.Webhook.Process(ctx, req)      // Validar firma HMAC + parsear evento
 client.Webhook.Validate(ctx, req)     // Solo validar firma
@@ -112,7 +114,42 @@ client.Webhook.Parse(ctx, payload)    // Solo parsear sin validar
 client.Webhook.HTTPHandler(fn)        // Handler net/http listo para montar
 ```
 
-Ejemplo de webhook HTTP handler:
+#### Tipos de Eventos
+
+Los webhooks pueden ser de tres tipos:
+
+| Tipo | Descripción | Event ID |
+|------|-------------|----------|
+| `payment` | Eventos de pago (creado, actualizado, aprobado, rechazado) | `payment_id` |
+| `shipment` | Eventos de envío (creado, actualizado, entregado) | `shipment_id` |
+| `qr` | Eventos QR (orden creada, pagada, cancelada) | `qr_id` |
+
+#### Ejemplo de Payload
+
+```json
+{
+  "id": 1234567890,
+  "type": "payment",
+  "action": "payment.created",
+  "date_created": "2024-01-15T10:30:00Z",
+  "user_id": 123456789,
+  "api_version": "v2"
+}
+```
+
+#### Validación de Firma
+
+El SDK valida automáticamente la firma HMAC-SHA256. Configura el secret en la inicialización:
+
+```go
+client, err := sdk.New(sdk.Config{
+    AccessToken:   "YOUR_ACCESS_TOKEN",
+    WebhookSecret: "YOUR_WEBHOOK_SECRET",  // Secret del portal de Mercado Pago
+    Country:       "PE",
+})
+```
+
+#### Ejemplo de HTTP Handler
 
 ```go
 http.Handle("/webhooks", client.Webhook.HTTPHandler(
@@ -128,6 +165,42 @@ http.Handle("/webhooks", client.Webhook.HTTPHandler(
         return nil
     },
 ))
+```
+
+#### Reintentos
+
+Mercado Libre reintenta entregas fallidas hasta 3 días con backoff exponencial. El handler retorna 2xx inmediatamente; el procesamiento pesado debe hacerse asynchronously.
+
+#### Idempotencia
+
+Usa el campo `id` del evento como clave única para evitar procesamiento duplicado:
+
+```go
+func (h *WebhookHandler) Handle(ctx context.Context, event *domain.WebhookEvent) error {
+    // Verificar si ya fue procesado
+    exists, err := h.cache.Exists(ctx, fmt.Sprintf("webhook:%d", event.ID))
+    if err == nil && exists {
+        return nil // Ya procesado
+    }
+    
+    // Procesar evento...
+    
+    // Marcar como procesado (TTL: 7 días)
+    h.cache.Set(ctx, fmt.Sprintf("webhook:%d", event.ID), "1", 7*24*time.Hour)
+    return nil
+}
+```
+
+#### Testing Local
+
+Usa [ngrok](https://ngrok.com) o [Stripe CLI](https://docs.stripe.com/webhooks/test-local) para probar webhooks localmente:
+
+```bash
+# Con ngrok
+ngrok http 8080
+
+# Registra la URL en el portal de Mercado Pago
+# https://your-ngrok.io/webhooks
 ```
 
 ### Capacidades por Región
