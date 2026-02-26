@@ -1,18 +1,18 @@
 # SDK Mercado Libre para Go
 
-SDK en Go para integrar pagos, envios, codigos QR y webhooks con las APIs de Mercado Libre / Mercado Pago. Soporte multi-region automatico para 6 paises de LATAM.
+SDK en Go para integrar pagos, envíos, códigos QR y webhooks con las APIs de Mercado Libre / Mercado Pago. Soporte multi-región automático para 6 países de LATAM.
 
-## Caracteristicas
+## Características
 
-- **Pagos** — Crear, consultar, cancelar, reembolsar pagos con multiples metodos por pais
-- **Envios** — Consultar envios, tracking en tiempo real, descarga de etiquetas PDF
-- **QR / Instore** — Ordenes QR dinamico/estatico, gestion de POS y sucursales
-- **Webhooks** — Validacion HMAC-SHA256, parsing de eventos, HTTP handler listo para montar
-- **Multi-Region** — 6 paises (PE, MX, AR, BR, CL, CO) con validacion automatica de capacidades
-- **Seguridad** — Sanitizacion de inputs, `url.PathEscape` en paths, `io.LimitReader` en responses
-- **Zero dependencies** — Solo `gopkg.in/yaml.v3` para configuracion regional
+- **Pagos** — Crear, consultar, cancelar, reembolsar pagos con múltiples métodos por país
+- **Envíos** — Consultar envíos, tracking en tiempo real, descarga de etiquetas PDF
+- **QR / Instore** — Órdenes QR dinámico/estático, gestión de POS y sucursales
+- **Webhooks** — Validación HMAC-SHA256, parsing de eventos, HTTP handler listo para montar
+- **Multi-Región** — 6 países (PE, MX, AR, BR, CL, CO) con validación automática de capacidades
+- **Seguridad** — Sanitización de inputs, `url.PathEscape` en paths, `io.LimitReader` en responses
+- **Zero dependencies** — Solo `gopkg.in/yaml.v3` para configuración regional
 
-## Instalacion
+## Instalación
 
 ```bash
 go get github.com/zentry/sdk-mercadolibre
@@ -20,7 +20,7 @@ go get github.com/zentry/sdk-mercadolibre
 
 Requiere Go 1.21+.
 
-## Inicio Rapido
+## Inicio Rápido
 
 ```go
 package main
@@ -72,14 +72,14 @@ client.Payment.GetRefund(ctx, paymentID, refundID)  // Obtener reembolso
 client.Payment.ListRefunds(ctx, paymentID)          // Listar reembolsos
 ```
 
-### Envios
+### Envíos
 
 ```go
-client.Shipment.Get(ctx, id)                  // Obtener envio
-client.Shipment.GetByOrder(ctx, orderID)      // Envio por orden
-client.Shipment.List(ctx, filters)            // Buscar envios
-client.Shipment.Update(ctx, id, req)          // Actualizar envio
-client.Shipment.Cancel(ctx, id)               // Cancelar envio
+client.Shipment.Get(ctx, id)                  // Obtener envío
+client.Shipment.GetByOrder(ctx, orderID)      // Envío por orden
+client.Shipment.List(ctx, filters)            // Buscar envíos
+client.Shipment.Update(ctx, id, req)          // Actualizar envío
+client.Shipment.Cancel(ctx, id)               // Cancelar envío
 client.Shipment.GetTracking(ctx, shipmentID)  // Historial de tracking
 client.Shipment.GetLabel(ctx, shipmentID)     // Descargar etiqueta PDF ([]byte)
 ```
@@ -121,7 +121,7 @@ http.Handle("/webhooks", client.Webhook.HTTPHandler(
         case event.IsPaymentEvent():
             log.Printf("Pago %s: %s", event.DataID, event.Type)
         case event.IsShipmentEvent():
-            log.Printf("Envio %s: %s", event.DataID, event.Type)
+            log.Printf("Envío %s: %s", event.DataID, event.Type)
         case event.IsQREvent():
             log.Printf("QR %s: %s", event.DataID, event.Type)
         }
@@ -130,31 +130,31 @@ http.Handle("/webhooks", client.Webhook.HTTPHandler(
 ))
 ```
 
-### Capacidades por Region
+### Capacidades por Región
 
 ```go
-client.Capabilities.Get(ctx)                  // Capacidades del pais configurado
-client.Capabilities.GetForCountry(ctx, "MX")  // Capacidades de otro pais
-client.Capabilities.GetPaymentMethods(ctx)    // Metodos de pago disponibles
-client.Capabilities.GetCarriers(ctx)          // Carriers de logistica
-client.Capabilities.IsQRSupported(ctx)        // Soporte QR en el pais
-client.Capabilities.GetCurrency(ctx)          // Moneda del pais
+client.Capabilities.Get(ctx)                  // Capacidades del país configurado
+client.Capabilities.GetForCountry(ctx, "MX")  // Capacidades de otro país
+client.Capabilities.GetPaymentMethods(ctx)    // Métodos de pago disponibles
+client.Capabilities.GetCarriers(ctx)          // Carriers de logística
+client.Capabilities.IsQRSupported(ctx)        // Soporte QR en el país
+client.Capabilities.GetCurrency(ctx)          // Moneda del país
 ```
 
-## Multi-Region
+## Multi-Región
 
-El SDK valida automaticamente cada operacion contra las capacidades del pais configurado.
+El SDK valida automáticamente cada operación contra las capacidades del país configurado.
 
-| Pais | Codigo | Moneda | QR | Metodos de pago |
+| País | Código | Moneda | QR | Métodos de pago |
 |------|--------|--------|-----|-----------------|
-| Peru | PE | PEN | Si | Yape, tarjetas, transferencia |
-| Mexico | MX | MXN | Si | SPEI, OXXO, tarjetas |
-| Argentina | AR | ARS | Si | Rapipago, tarjetas |
-| Brasil | BR | BRL | Si | PIX, boleto, tarjetas |
-| Chile | CL | CLP | Si | tarjetas, transferencia |
-| Colombia | CO | COP | Si | PSE, Efecty, tarjetas |
+| Perú | PE | PEN | Sí | Yape, tarjetas, transferencia |
+| México | MX | MXN | Sí | SPEI, OXXO, tarjetas |
+| Argentina | AR | ARS | Sí | Rapipago, tarjetas |
+| Brasil | BR | BRL | Sí | PIX, boleto, tarjetas |
+| Chile | CL | CLP | Sí | tarjetas, transferencia |
+| Colombia | CO | COP | Sí | PSE, Efecty, tarjetas |
 
-Cambiar de pais en runtime:
+Cambiar de país en runtime:
 
 ```go
 peClient, _ := sdk.New(sdk.Config{Country: "PE", AccessToken: "..."})
@@ -166,14 +166,14 @@ mxClient, _ := peClient.ForCountry("MX")
 El SDK sigue Clean Architecture con regla de dependencia estricta: `core/` nunca importa `providers/`.
 
 ```
-sdk.go              API publica, orquesta todo
-config.go           Configuracion del SDK
+[sdk.go](sdk.go)              API pública, orquesta todo
+[config.go](config.go)           Configuración del SDK
 
 core/
   domain/           Entidades puras (Payment, Shipment, QR, Webhook)
   ports/            Interfaces: PaymentProvider, ShipmentProvider, QRProvider, WebhookHandler
-  usecases/         Servicios con sanitizacion y validacion
-  errors/           Sistema de errores unificado (21 codigos)
+  usecases/         Servicios con sanitización y validación
+  errors/           Sistema de errores unificado (21 códigos)
 
 providers/
   mercadolibre/
@@ -181,10 +181,10 @@ providers/
     shipment/       Adapter + Mapper + Models
     qr/             Adapter + Mapper + Models
     webhook/        Handler HMAC-SHA256 + Parser
-    config/         Capabilities por pais (YAML embebido)
-    auth.go         OAuth2 (code exchange, refresh)
-    client.go       HTTP clients por servicio
-    endpoints.go    URLs por region
+    config/         Capabilities por país (YAML embebido)
+    [auth.go](providers/mercadolibre/auth.go)         OAuth2 (code exchange, refresh)
+    [client.go](providers/mercadolibre/client.go)       HTTP clients por servicio
+    [endpoints.go](providers/mercadolibre/endpoints.go)    URLs por región
 
 pkg/
   httputil/         HTTP client con retry, backoff, LimitReader, RequestOption
@@ -193,14 +193,14 @@ pkg/
   idempotency/      UUID v4 para X-Idempotency-Key
 ```
 
-### Principios de Diseno
+### Principios de Diseño
 
-- **Libreria, no aplicacion** — Sin panics, sin logging forzado, errores estructurados
+- **Librería, no aplicación** — Sin panics, sin logging forzado, errores estructurados
 - **Seguridad de strings** — `fmt.Sprintf` + `url.PathEscape` para URLs, `url.Values` para queries
-- **Sanitizacion** — Todo input se sanitiza en la capa de usecases antes de llegar al proveedor
+- **Sanitización** — Todo input se sanitiza en la capa de usecases antes de llegar al proveedor
 - **Memoria** — `io.LimitReader` (10 MiB max), `bytes.NewReader` reutilizado en reintentos
 - **Concurrencia** — `sync.RWMutex` en cache de capabilities
-- **Extensibilidad** — Agregar un pais = agregar un YAML, no codigo
+- **Extensibilidad** — Agregar un país = agregar un YAML, no código
 
 ### Seguridad
 
@@ -209,12 +209,12 @@ pkg/
 | URLs | `url.PathEscape(id)` dentro de `fmt.Sprintf` |
 | Query params | `url.Values{}` + `.Encode()` |
 | Headers | `fmt.Sprintf("Bearer %s", token)` |
-| Inputs | Sanitizacion en usecases (trim, null bytes, regex) |
-| Webhooks | HMAC-SHA256 con comparacion timing-safe |
+| Inputs | Sanitización en usecases (trim, null bytes, regex) |
+| Webhooks | HMAC-SHA256 con comparación timing-safe |
 | HTTP responses | `io.LimitReader(resp.Body, 10<<20)` |
 | Idempotencia | UUID v4 via `crypto/rand` para `X-Idempotency-Key` |
 
-## Configuracion
+## Configuración
 
 ```go
 client, err := sdk.New(sdk.Config{
@@ -223,7 +223,7 @@ client, err := sdk.New(sdk.Config{
     ClientSecret:  "YOUR_CLIENT_SECRET",    // OAuth2 (opcional)
     Country:       "PE",                    // Default: PE
     Timeout:       30 * time.Second,        // Default: 30s
-    WebhookSecret: "YOUR_WEBHOOK_SECRET",   // Para validacion HMAC
+    WebhookSecret: "YOUR_WEBHOOK_SECRET",   // Para validación HMAC
     Logger:        logger.Func(func(msg string, kv ...any) {
         slog.Debug(msg, kv...)
     }),
@@ -244,7 +244,7 @@ Si no se proporciona, se usa un no-op logger. Para integrar con `slog`, `zap`, o
 
 ## Manejo de Errores
 
-Todos los errores retornan `*errors.SDKError` con codigo estructurado:
+Todos los errores retornan `*errors.SDKError` con código estructurado:
 
 ```go
 payment, err := client.Payment.Get(ctx, "invalid-id")
@@ -255,7 +255,7 @@ if err != nil {
         case errors.ErrCodeNotFound:
             log.Println("Pago no encontrado")
         case errors.ErrCodeUnauthorized:
-            log.Println("Token invalido")
+            log.Println("Token inválido")
         case errors.ErrCodeRateLimited:
             log.Println("Rate limit, reintentar")
         }
@@ -280,7 +280,7 @@ Los tests usan mocks (sin API keys) y son ejecutables offline.
 ## Dependencias
 
 ```
-gopkg.in/yaml.v3    Unica dependencia externa (configuracion regional YAML)
+gopkg.in/yaml.v3    Única dependencia externa (configuración regional YAML)
 ```
 
 Sin frameworks HTTP, sin loggers externos, sin ORMs. Standard library + 1 dependencia.
